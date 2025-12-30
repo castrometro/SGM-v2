@@ -1,6 +1,11 @@
+/**
+ * Context de autenticación
+ * Integrado con Zustand store para persistencia
+ */
 import { createContext, useContext, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../api/axios'
+import { useAuthStore } from '../stores/authStore'
 
 const AuthContext = createContext(null)
 
@@ -13,9 +18,18 @@ export const useAuth = () => {
 }
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const navigate = useNavigate()
+  
+  // Store de Zustand
+  const { 
+    user, 
+    accessToken, 
+    setAuth, 
+    setUser, 
+    logout: storeLogout,
+    isAuthenticated 
+  } = useAuthStore()
 
   // Verificar si hay sesión al cargar
   useEffect(() => {
@@ -23,9 +37,7 @@ export const AuthProvider = ({ children }) => {
   }, [])
 
   const checkAuth = async () => {
-    const token = localStorage.getItem('access_token')
-    
-    if (!token) {
+    if (!accessToken) {
       setIsLoading(false)
       return
     }
@@ -34,8 +46,8 @@ export const AuthProvider = ({ children }) => {
       const response = await api.get('/v1/core/me/')
       setUser(response.data)
     } catch (error) {
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
+      console.error('Error verificando auth:', error)
+      storeLogout()
     } finally {
       setIsLoading(false)
     }
@@ -45,8 +57,8 @@ export const AuthProvider = ({ children }) => {
     const response = await api.post('/auth/token/', { email, password })
     const { access, refresh } = response.data
 
-    localStorage.setItem('access_token', access)
-    localStorage.setItem('refresh_token', refresh)
+    // Guardar tokens en el store
+    setAuth(null, access, refresh)
 
     // Obtener datos del usuario
     const userResponse = await api.get('/v1/core/me/')
@@ -56,15 +68,13 @@ export const AuthProvider = ({ children }) => {
   }
 
   const logout = () => {
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
-    setUser(null)
+    storeLogout()
     navigate('/login')
   }
 
   const value = {
     user,
-    isAuthenticated: !!user,
+    isAuthenticated,
     isLoading,
     login,
     logout,
@@ -77,3 +87,5 @@ export const AuthProvider = ({ children }) => {
     </AuthContext.Provider>
   )
 }
+
+export default AuthProvider

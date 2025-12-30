@@ -1,5 +1,10 @@
 """
 Modelo de Usuario personalizado para SGM v2.
+
+Roles del sistema (jerarquía de permisos heredados):
+- Analista: Ejecuta el proceso de validación de nómina
+- Supervisor: Todo lo del Analista + gestiona equipo y aprueba incidencias
+- Gerente: Todo + administración del sistema
 """
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
@@ -40,11 +45,15 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     """
     Modelo de Usuario personalizado.
     Usa email como identificador único en lugar de username.
+    
+    Jerarquía de roles:
+        Gerente > Supervisor > Analista
+    
+    Cada rol hereda los permisos del anterior.
     """
     
     TIPO_USUARIO_CHOICES = [
         ('analista', 'Analista'),
-        ('senior', 'Senior'),
         ('supervisor', 'Supervisor'),
         ('gerente', 'Gerente'),
     ]
@@ -79,6 +88,7 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
         null=True,
         blank=True,
         related_name='analistas_supervisados',
+        limit_choices_to={'tipo_usuario__in': ['supervisor', 'gerente']},
         help_text='Supervisor asignado a este usuario'
     )
     
@@ -115,11 +125,11 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
         """Validaciones del modelo."""
         super().clean()
         
-        # Solo analistas y seniors pueden tener supervisor
+        # Solo analistas pueden tener supervisor asignado
         if self.supervisor:
-            if self.tipo_usuario not in ['analista', 'senior']:
+            if self.tipo_usuario != 'analista':
                 raise ValidationError({
-                    'supervisor': 'Solo analistas y seniors pueden tener un supervisor asignado.'
+                    'supervisor': 'Solo los analistas pueden tener un supervisor asignado.'
                 })
             
             # El supervisor debe ser supervisor o gerente
@@ -127,33 +137,118 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
                 raise ValidationError({
                     'supervisor': 'El supervisor debe tener rol de supervisor o gerente.'
                 })
+            
+            # No puede ser su propio supervisor
+            if self.pk and self.supervisor.pk == self.pk:
+                raise ValidationError({
+                    'supervisor': 'Un usuario no puede ser su propio supervisor.'
+                })
+    
+    # =========================================================================
+    # Propiedades de verificación de rol
+    # =========================================================================
     
     @property
-    def es_supervisor_o_superior(self):
-        """Verifica si el usuario es supervisor o tiene rol superior."""
-        return self.tipo_usuario in ['supervisor', 'gerente']
+    def es_analista(self):
+        """Verifica si el usuario es analista."""
+        return self.tipo_usuario == 'analista'
+    
+    @property
+    def es_supervisor(self):
+        """Verifica si el usuario es supervisor."""
+        return self.tipo_usuario == 'supervisor'
     
     @property
     def es_gerente(self):
         """Verifica si el usuario es gerente."""
         return self.tipo_usuario == 'gerente'
     
+    @property
+    def es_supervisor_o_superior(self):
+        """Verifica si el usuario es supervisor o tiene rol superior."""
+        return self.tipo_usuario in ['supervisor', 'gerente']
+    
+    # =========================================================================
+    # Métodos de acceso a recursos
+    # =========================================================================
+    
     def get_clientes_asignados(self):
-        """Obtiene los clientes asignados a este usuario."""
+        """Obtiene los clientes asignados directamente a este usuario."""
         return [asig.cliente for asig in self.asignaciones.select_related('cliente').all()]
+    
+    def get_analistas_a_cargo(self):
+        """
+        Para supervisores/gerentes: obtiene los analistas bajo su supervisión.
+        """
+        if not self.es_supervisor_o_superior:
+            return []
+        return list(self.analistas_supervisados.filter(is_active=True))
     
     def get_clientes_supervisados(self):
         """
         Para supervisores: obtiene los clientes de sus analistas supervisados.
+        Para gerentes: obtiene todos los clientes.
         """
+        if self.es_gerente:
+            from .cliente import Cliente
+            return list(Cliente.objects.filter(activo=True))
+        
         if not self.es_supervisor_o_superior:
             return []
         
         from .asignacion import AsignacionClienteUsuario
         analistas_ids = self.analistas_supervisados.values_list('id', flat=True)
-        return [
-            asig.cliente 
-            for asig in AsignacionClienteUsuario.objects
-                .filter(usuario_id__in=analistas_ids)
-                .select_related('cliente')
-        ]
+        return list(
+            set(
+                asig.cliente 
+                for asig in AsignacionClienteUsuario.objects
+                    .filter(usuario_id__in=analistas_ids, activo=True)
+                    .select_related('cliente')
+            )
+        )
+    
+    def get_todos_los_clientes(self):
+        """
+        Obtiene todos los clientes a los que el usuario tiene acceso.
+        - Analista: solo sus clientes asignados
+        - Supervisor: sus clientes + los de sus analistas
+        - Gerente: todos los clientes activos
+        """
+        if self.es_gerente:
+            from .cliente import Cliente
+            return list(Cliente.objects.filter(activo=True))
+        
+        clientes = set(self.get_clientes_asignados())
+        if self.es_supervisor_o_superior:
+            clientes.update(self.get_clientes_supervisados())
+        
+        return list(clientes)
+    
+    def puede_ver_cierre(self, cierre):
+        """
+        Verifica si el usuario puede ver un cierre específico.
+        """
+        if self.es_gerente:
+            return True
+        
+        if cierre.usuario_analista == self:
+            return True
+        
+        if self.es_supervisor:
+            return cierre.usuario_analista in self.get_analistas_a_cargo()
+        
+        return False
+    
+    def puede_aprobar_incidencia(self, incidencia):
+        """
+        Verifica si el usuario puede aprobar/rechazar una incidencia.
+        Solo supervisores y gerentes pueden aprobar incidencias de sus equipos.
+        """
+        if not self.es_supervisor_o_superior:
+            return False
+        
+        if self.es_gerente:
+            return True
+        
+        # Supervisor: solo puede aprobar incidencias de sus analistas
+        return incidencia.cierre.usuario_analista in self.get_analistas_a_cargo()

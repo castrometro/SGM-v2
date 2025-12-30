@@ -1,6 +1,11 @@
+/**
+ * Configuración de Axios con interceptores
+ * Maneja tokens JWT y refresh automático
+ */
 import axios from 'axios'
+import { useAuthStore } from '../stores/authStore'
 
-const API_URL = import.meta.env.VITE_API_URL || '/api'
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
 const api = axios.create({
   baseURL: API_URL,
@@ -9,51 +14,53 @@ const api = axios.create({
   },
 })
 
-// Interceptor para agregar token a las requests
+// Interceptor de request - Añade token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token')
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+    const { accessToken } = useAuthStore.getState()
+    if (accessToken) {
+      config.headers.Authorization = `Bearer ${accessToken}`
     }
     return config
   },
   (error) => Promise.reject(error)
 )
 
-// Interceptor para manejar refresh token
+// Interceptor de response - Maneja refresh token
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config
-
-    // Si el error es 401 y no es un retry
+    
+    // Si es error 401 y no es un retry
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
-
-      const refreshToken = localStorage.getItem('refresh_token')
+      
+      const { refreshToken, setTokens, logout } = useAuthStore.getState()
       
       if (refreshToken) {
         try {
           const response = await axios.post(`${API_URL}/auth/token/refresh/`, {
             refresh: refreshToken,
           })
-
+          
           const { access } = response.data
-          localStorage.setItem('access_token', access)
-
+          setTokens(access, refreshToken)
+          
           originalRequest.headers.Authorization = `Bearer ${access}`
           return api(originalRequest)
         } catch (refreshError) {
-          // Si el refresh falla, limpiar tokens y redirigir
-          localStorage.removeItem('access_token')
-          localStorage.removeItem('refresh_token')
+          // Refresh falló, logout
+          logout()
           window.location.href = '/login'
           return Promise.reject(refreshError)
         }
+      } else {
+        logout()
+        window.location.href = '/login'
       }
     }
-
+    
     return Promise.reject(error)
   }
 )
