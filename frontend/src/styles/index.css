@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base styles */
+body {
+  @apply bg-secondary-950 text-secondary-100 antialiased;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-secondary-900;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-secondary-700 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-secondary-600;
+}
+
+/* Focus styles */
+*:focus {
+  @apply outline-none;
+}
+
+*:focus-visible {
+  @apply ring-2 ring-primary-500 ring-offset-2 ring-offset-secondary-950;
+}
+
+/* Utility classes */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Component base styles */
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+  }
+  
+  .btn-primary {
+    @apply btn bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800;
+  }
+  
+  .btn-secondary {
+    @apply btn bg-secondary-800 text-secondary-100 hover:bg-secondary-700 active:bg-secondary-600;
+  }
+  
+  .btn-ghost {
+    @apply btn text-secondary-300 hover:bg-secondary-800 hover:text-secondary-100;
+  }
+  
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700 active:bg-red-800;
+  }
+  
+  .btn-sm {
+    @apply h-8 px-3 text-sm;
+  }
+  
+  .btn-md {
+    @apply h-10 px-4 text-sm;
+  }
+  
+  .btn-lg {
+    @apply h-12 px-6 text-base;
+  }
+  
+  .input {
+    @apply flex h-10 w-full rounded-lg border border-secondary-700 bg-secondary-900 px-3 py-2 text-sm text-secondary-100 placeholder:text-secondary-500 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  
+  .label {
+    @apply text-sm font-medium text-secondary-300;
+  }
+  
+  .card {
+    @apply rounded-xl border border-secondary-800 bg-secondary-900 p-6;
+  }
+}
