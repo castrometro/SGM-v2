@@ -7,5 +7,8 @@ class ValidadorConfig(AppConfig):
     verbose_name = 'Validador de Nómina'
     
     def ready(self):
-        # Importar signals cuando la app esté lista
-        pass
+        """Importar signals cuando la app está lista."""
+        try:
+            import apps.validador.signals  # noqa
+        except ImportError:
+            pass

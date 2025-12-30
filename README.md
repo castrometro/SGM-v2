@@ -171,11 +171,111 @@ Gestión de entidades base del sistema:
 - **Asignaciones**: Relación usuario-cliente
 
 ### 2. Validador (`apps.validador`)
-Motor de validación de nómina:
-- **Cierres**: Proceso mensual de cierre
-- **Archivos**: Libro de remuneraciones, movimientos, novedades
-- **Validaciones**: Reglas de validación y discrepancias
-- **Incidencias**: Gestión de problemas detectados
+Motor de validación de nómina con flujo de 9 fases:
+
+#### Flujo del Validador
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           FLUJO DEL VALIDADOR                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────┐     ┌───────────────────┐     ┌──────────────────┐        │
+│  │ 1. CARGA DE  │────▶│ 2. CLASIFICACIÓN  │────▶│ 3. MAPEO ITEMS   │        │
+│  │   ARCHIVOS   │     │    CONCEPTOS      │     │   NOVEDADES      │        │
+│  └──────────────┘     └───────────────────┘     └──────────────────┘        │
+│        │                    (si nuevos)               (si nuevos)            │
+│        │                                                    │                │
+│        ▼                                                    ▼                │
+│  ┌──────────────┐     ┌───────────────────┐     ┌──────────────────┐        │
+│  │  ERP Files:  │     │  Headers Libro ──▶│     │ Novedades items  │        │
+│  │  - Libro     │     │  Categorías:      │     │ ──▶ Conceptos   │        │
+│  │  - Movim.    │     │  • Hab. Imponib.  │     │     del ERP      │        │
+│  │              │     │  • Hab. No Imp.   │     │                  │        │
+│  │  Analista:   │     │  • Desc. Legales  │     │  (Mapeo 1:1)     │        │
+│  │  - Novedades │     │  • Otros Desc.    │     │                  │        │
+│  │  - Asistenc. │     │  • Aportes Pat.   │     │  Se guarda por   │        │
+│  │  - Finiquitos│     │  • Informativos   │     │  cliente         │        │
+│  │  - Ingresos  │     │                   │     │                  │        │
+│  └──────────────┘     └───────────────────┘     └──────────────────┘        │
+│                                                          │                   │
+│                                                          ▼                   │
+│  ┌──────────────────────────────────────────────────────────────────┐       │
+│  │                      4. COMPARACIÓN                                │       │
+│  │  ┌────────────────────────┐    ┌────────────────────────┐        │       │
+│  │  │   Libro vs Novedades   │    │  Movimientos vs Anal.  │        │       │
+│  │  │   (items que se        │    │  (Altas, Bajas,        │        │       │
+│  │  │    comparan)           │    │   Licencias, Vac.)     │        │       │
+│  │  └────────────────────────┘    └────────────────────────┘        │       │
+│  │                                                                    │       │
+│  │  EXCLUIDOS: Informativos, Descuentos Legales                      │       │
+│  └──────────────────────────────────────────────────────────────────┘       │
+│                           │                                                  │
+│                           ▼                                                  │
+│           ┌───────────────────────────────┐                                 │
+│           │     ¿Discrepancias = 0?       │                                 │
+│           └───────────────────────────────┘                                 │
+│                    │              │                                          │
+│                   NO             SÍ                                          │
+│                    │              │                                          │
+│                    ▼              ▼                                          │
+│  ┌──────────────────────┐  ┌──────────────────────┐                         │
+│  │ 5. CON DISCREPANCIAS │  │ 6. CONSOLIDADO       │                         │
+│  │    Usuario corrige   │  │    (Solo datos ERP)  │                         │
+│  │    re-subiendo       │  └──────────────────────┘                         │
+│  │    archivos          │           │                                        │
+│  └──────────────────────┘           │                                        │
+│           │                         │                                        │
+│           └────────────┬────────────┘                                        │
+│                        │                                                     │
+│                        ▼                                                     │
+│  ┌──────────────────────────────────────────────────────────────────┐       │
+│  │             7. DETECCIÓN DE INCIDENCIAS                           │       │
+│  │                                                                    │       │
+│  │   Compara totales por concepto con mes anterior                   │       │
+│  │   Si variación > 30% → Genera INCIDENCIA                          │       │
+│  │                                                                    │       │
+│  │   EXCLUIDOS: Informativos, Descuentos Legales                     │       │
+│  │   PRIMER CIERRE: Salta esta fase (sin mes anterior)               │       │
+│  └──────────────────────────────────────────────────────────────────┘       │
+│                        │                                                     │
+│                        ▼                                                     │
+│  ┌──────────────────────────────────────────────────────────────────┐       │
+│  │          8. REVISIÓN DE INCIDENCIAS (FORO)                        │       │
+│  │                                                                    │       │
+│  │   Analista justifica ◀──────────▶ Supervisor revisa               │       │
+│  │   cada incidencia                  y aprueba/rechaza              │       │
+│  │                                                                    │       │
+│  │   RECHAZO: El cierre vuelve a fase 1 (Carga de Archivos)          │       │
+│  │            El usuario debe corregir y re-subir TODO               │       │
+│  └──────────────────────────────────────────────────────────────────┘       │
+│                        │                                                     │
+│                        ▼                                                     │
+│           ┌───────────────────────────────┐                                 │
+│           │   ¿Todas aprobadas?           │                                 │
+│           │   ¿Incidencias = 0?           │                                 │
+│           └───────────────────────────────┘                                 │
+│                    │              │                                          │
+│                   NO             SÍ                                          │
+│                    │              │                                          │
+│                    │              ▼                                          │
+│                    │     ┌──────────────────────┐                           │
+│                    │     │ 9. FINALIZADO        │                           │
+│                    └─────│    Cierre completo   │                           │
+│                          └──────────────────────┘                           │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Modelos Principales del Validador
+- **Cierre**: Contenedor del proceso mensual
+- **ArchivoERP / ArchivoAnalista**: Archivos subidos
+- **CategoriaConcepto**: Categorías fijas del sistema
+- **ConceptoCliente**: Headers clasificados por cliente
+- **MapeoItemNovedades**: Mapeo 1:1 novedades → conceptos
+- **Discrepancia**: Diferencias encontradas
+- **Incidencia**: Variaciones >30% con mes anterior
+- **ComentarioIncidencia**: Foro de discusión
 
 ### 3. Reportería (`apps.reporteria`)
 Generación de informes y dashboards:
