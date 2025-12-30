@@ -3,29 +3,17 @@ Configuración de producción para SGM v2.
 """
 
 import os
-from .base import *
 
-DEBUG = False
+# CORS - Solo orígenes específicos
+CORS_ALLOWED_ORIGINS = [
+    "http://172.17.11.18:5173",
+    "http://localhost:5173",
+]
 
-ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',')
-
-# CORS - Solo orígenes permitidos
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
-CORS_ALLOW_CREDENTIALS = True
-
-# Security settings
+# Seguridad
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
-SECURE_HSTS_SECONDS = 31536000
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True
-
-# Solo en producción con HTTPS
-if os.environ.get('USE_HTTPS', 'False').lower() == 'true':
-    SECURE_SSL_REDIRECT = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
 
 # Logging para producción
 LOGGING = {
@@ -43,8 +31,10 @@ LOGGING = {
             'formatter': 'verbose',
         },
         'file': {
-            'class': 'logging.FileHandler',
-            'filename': '/app/logs/django.log',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': '/app/logs/sgm.log',
+            'maxBytes': 10485760,  # 10MB
+            'backupCount': 5,
             'formatter': 'verbose',
         },
     },
@@ -56,6 +46,11 @@ LOGGING = {
         'django': {
             'handlers': ['console', 'file'],
             'level': 'WARNING',
+            'propagate': False,
+        },
+        'celery': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
             'propagate': False,
         },
         'apps': {

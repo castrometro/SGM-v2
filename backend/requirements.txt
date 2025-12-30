@@ -10,9 +10,11 @@ psycopg2-binary>=2.9,<3.0
 # Autenticación JWT
 djangorestframework-simplejwt>=5.3,<6.0
 
-# Celery
+# Celery + Beat + Results
 celery>=5.3,<6.0
 redis>=5.0,<6.0
+django-celery-beat>=2.5,<3.0
+django-celery-results>=2.5,<3.0
 
 # Procesamiento de archivos Excel
 openpyxl>=3.1,<4.0

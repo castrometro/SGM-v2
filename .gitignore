@@ -149,3 +149,32 @@ backend/staticfiles/*
 
 # Local development
 *.local
+
+# ========================
+# Environment files (proteger credenciales)
+# ========================
+.env
+.env.local
+.env.production
+!.env.example
+
+# ========================
+# Logs
+# ========================
+backend/logs/
+*.log
+
+# ========================
+# Environment files (proteger credenciales)
+# ========================
+.env
+.env.local
+.env.production
+!.env.example
+
+# ========================
+# Logs
+# ========================
+backend/logs/
+*.log
+

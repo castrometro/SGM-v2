@@ -2,43 +2,23 @@
 Configuración de desarrollo para SGM v2.
 """
 
-from .base import *
+# CORS - Permitir todo en desarrollo
+CORS_ALLOW_ALL_ORIGINS = True
 
-DEBUG = True
-
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
-
-# CORS - Permitir frontend en desarrollo
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-]
-CORS_ALLOW_CREDENTIALS = True
-
-# Agregar browsable API en desarrollo
-REST_FRAMEWORK['DEFAULT_RENDERER_CLASSES'] = [
-    'rest_framework.renderers.JSONRenderer',
-    'rest_framework.renderers.BrowsableAPIRenderer',
-]
-
-# Logging para desarrollo
+# Logging más detallado
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {message}',
+            'format': '{levelname} {asctime} {module} {message}',
             'style': '{',
         },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
-            'formatter': 'simple',
+            'formatter': 'verbose',
         },
     },
     'root': {
@@ -47,6 +27,11 @@ LOGGING = {
     },
     'loggers': {
         'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'celery': {
             'handlers': ['console'],
             'level': 'INFO',
             'propagate': False,
