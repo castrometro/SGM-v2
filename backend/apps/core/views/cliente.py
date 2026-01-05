@@ -2,6 +2,7 @@
 Views de Cliente para SGM v2.
 """
 
+from django.db import models
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -101,4 +102,30 @@ class ClienteViewSet(viewsets.ModelViewSet):
         clientes_ids = user.asignaciones.filter(activa=True).values_list('cliente_id', flat=True)
         clientes = Cliente.objects.filter(id__in=clientes_ids)
         serializer = ClienteSerializer(clientes, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, IsGerente])
+    def todos(self, request):
+        """Lista todos los clientes (solo para gerentes)."""
+        queryset = Cliente.objects.select_related('industria').all()
+        
+        # Aplicar búsqueda
+        search = request.query_params.get('search', '')
+        if search:
+            queryset = queryset.filter(
+                models.Q(razon_social__icontains=search) |
+                models.Q(nombre_comercial__icontains=search) |
+                models.Q(rut__icontains=search)
+            )
+        
+        # Aplicar filtros
+        activo = request.query_params.get('activo')
+        if activo is not None:
+            queryset = queryset.filter(activo=activo.lower() == 'true')
+        
+        industria = request.query_params.get('industria')
+        if industria:
+            queryset = queryset.filter(industria_id=industria)
+        
+        serializer = ClienteSerializer(queryset, many=True)
         return Response(serializer.data)

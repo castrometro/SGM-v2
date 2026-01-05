@@ -6,6 +6,7 @@ import { cn } from '../../utils/cn'
 const variants = {
   default: 'bg-secondary-700 text-secondary-200',
   primary: 'bg-primary-600/20 text-primary-400 border-primary-500/30',
+  secondary: 'bg-secondary-700/50 text-secondary-300 border-secondary-600',
   success: 'bg-green-600/20 text-green-400 border-green-500/30',
   warning: 'bg-amber-600/20 text-amber-400 border-amber-500/30',
   danger: 'bg-red-600/20 text-red-400 border-red-500/30',
