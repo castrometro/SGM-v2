@@ -1,40 +1,21 @@
 /**
- * Hook para gestionar asignaciones cliente-analista/supervisor
+ * Hook simplificado para gestionar asignación de usuario a cliente
+ * Issue #7: Un cliente = Un usuario asignado
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../api/axios'
 
-// Query Keys
-const CLIENTES_ASIGNACIONES_KEY = ['clientes-asignaciones']
-const SUPERVISORES_CARGA_KEY = ['supervisores-carga']
+// Query Key
+const CLIENTES_KEY = ['clientes']
 
 /**
- * Obtiene todos los clientes con sus asignaciones (solo gerentes)
+ * Obtiene información de asignación de un cliente específico
  */
-export const useClientesConAsignaciones = (filters = {}) => {
+export const useInfoAsignacion = (clienteId) => {
   return useQuery({
-    queryKey: [...CLIENTES_ASIGNACIONES_KEY, filters],
+    queryKey: ['cliente-asignacion', clienteId],
     queryFn: async () => {
-      const params = new URLSearchParams()
-      if (filters.search) params.append('search', filters.search)
-      if (filters.supervisor) params.append('supervisor', filters.supervisor)
-      if (filters.sinSupervisor) params.append('sin_supervisor', 'true')
-      if (filters.sinAnalistas) params.append('sin_analistas', 'true')
-      
-      const { data } = await api.get(`/v1/core/clientes/con_asignaciones/?${params}`)
-      return data
-    },
-  })
-}
-
-/**
- * Obtiene las asignaciones de un cliente específico
- */
-export const useAsignacionesCliente = (clienteId) => {
-  return useQuery({
-    queryKey: ['cliente-asignaciones', clienteId],
-    queryFn: async () => {
-      const { data } = await api.get(`/v1/core/clientes/${clienteId}/asignaciones/`)
+      const { data } = await api.get(`/v1/core/clientes/${clienteId}/info_asignacion/`)
       return data
     },
     enabled: !!clienteId,
@@ -42,83 +23,45 @@ export const useAsignacionesCliente = (clienteId) => {
 }
 
 /**
- * Obtiene la carga de trabajo de todos los supervisores
+ * Mutation para asignar usuario a un cliente
  */
-export const useSupervisoresCarga = () => {
-  return useQuery({
-    queryKey: SUPERVISORES_CARGA_KEY,
-    queryFn: async () => {
-      const { data } = await api.get('/v1/core/clientes/supervisores_carga/')
-      return data
-    },
-  })
-}
-
-/**
- * Mutation para asignar supervisor a un cliente
- */
-export const useAsignarSupervisor = () => {
-  const queryClient = useQueryClient()
-  
-  return useMutation({
-    mutationFn: async ({ clienteId, supervisorId }) => {
-      const { data } = await api.post(
-        `/v1/core/clientes/${clienteId}/asignar_supervisor/`,
-        { supervisor_id: supervisorId }
-      )
-      return data
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: CLIENTES_ASIGNACIONES_KEY })
-      queryClient.invalidateQueries({ queryKey: SUPERVISORES_CARGA_KEY })
-      queryClient.invalidateQueries({ queryKey: ['clientes'] })
-    },
-  })
-}
-
-/**
- * Mutation para asignar analista a un cliente
- */
-export const useAsignarAnalista = () => {
-  const queryClient = useQueryClient()
-  
-  return useMutation({
-    mutationFn: async ({ clienteId, usuarioId, esPrincipal = false, notas = '' }) => {
-      const { data } = await api.post(
-        `/v1/core/clientes/${clienteId}/asignar_analista/`,
-        { 
-          usuario_id: usuarioId,
-          es_principal: esPrincipal,
-          notas 
-        }
-      )
-      return data
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: CLIENTES_ASIGNACIONES_KEY })
-      queryClient.invalidateQueries({ queryKey: ['cliente-asignaciones', variables.clienteId] })
-      queryClient.invalidateQueries({ queryKey: ['clientes'] })
-    },
-  })
-}
-
-/**
- * Mutation para desasignar analista de un cliente
- */
-export const useDesasignarAnalista = () => {
+export const useAsignarUsuario = () => {
   const queryClient = useQueryClient()
   
   return useMutation({
     mutationFn: async ({ clienteId, usuarioId }) => {
       const { data } = await api.post(
-        `/v1/core/clientes/${clienteId}/desasignar_analista/${usuarioId}/`
+        `/v1/core/clientes/${clienteId}/asignar_usuario/`,
+        { usuario_id: usuarioId }
       )
       return data
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: CLIENTES_ASIGNACIONES_KEY })
-      queryClient.invalidateQueries({ queryKey: ['cliente-asignaciones', variables.clienteId] })
-      queryClient.invalidateQueries({ queryKey: ['clientes'] })
+      queryClient.invalidateQueries({ queryKey: CLIENTES_KEY })
+      queryClient.invalidateQueries({ queryKey: ['cliente-asignacion', variables.clienteId] })
+      queryClient.invalidateQueries({ queryKey: ['clientes-todos'] })
+    },
+  })
+}
+
+/**
+ * Mutation para desasignar usuario de un cliente (asigna null)
+ */
+export const useDesasignarUsuario = () => {
+  const queryClient = useQueryClient()
+  
+  return useMutation({
+    mutationFn: async ({ clienteId }) => {
+      const { data } = await api.post(
+        `/v1/core/clientes/${clienteId}/asignar_usuario/`,
+        { usuario_id: null }
+      )
+      return data
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: CLIENTES_KEY })
+      queryClient.invalidateQueries({ queryKey: ['cliente-asignacion', variables.clienteId] })
+      queryClient.invalidateQueries({ queryKey: ['clientes-todos'] })
     },
   })
 }

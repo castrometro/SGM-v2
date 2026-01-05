@@ -5,7 +5,7 @@ Admin de la app Core para SGM v2.
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from .models import Usuario, Cliente, Industria, Servicio, ServicioCliente, AsignacionClienteUsuario
+from .models import Usuario, Cliente, Industria, Servicio, ServicioCliente
 
 
 @admin.register(Usuario)
@@ -35,10 +35,11 @@ class UsuarioAdmin(BaseUserAdmin):
 
 @admin.register(Cliente)
 class ClienteAdmin(admin.ModelAdmin):
-    list_display = ['razon_social', 'rut', 'industria', 'activo']
-    list_filter = ['industria', 'activo', 'bilingue']
+    list_display = ['razon_social', 'rut', 'industria', 'usuario_asignado', 'activo']
+    list_filter = ['industria', 'activo', 'bilingue', 'usuario_asignado__tipo_usuario']
     search_fields = ['razon_social', 'nombre_comercial', 'rut']
     ordering = ['razon_social']
+    raw_id_fields = ['usuario_asignado']
 
 
 @admin.register(Industria)
@@ -58,10 +59,3 @@ class ServicioClienteAdmin(admin.ModelAdmin):
     list_display = ['cliente', 'servicio', 'activo', 'fecha_inicio', 'fecha_fin']
     list_filter = ['servicio', 'activo']
     search_fields = ['cliente__razon_social']
-
-
-@admin.register(AsignacionClienteUsuario)
-class AsignacionClienteUsuarioAdmin(admin.ModelAdmin):
-    list_display = ['cliente', 'usuario', 'es_principal', 'activa', 'fecha_asignacion']
-    list_filter = ['activa', 'es_principal']
-    search_fields = ['cliente__razon_social', 'usuario__email']

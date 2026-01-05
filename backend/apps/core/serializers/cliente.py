@@ -14,11 +14,21 @@ class IndustriaSerializer(serializers.ModelSerializer):
         fields = ['id', 'nombre', 'descripcion', 'activa']
 
 
+class UsuarioAsignadoSerializer(serializers.Serializer):
+    """Serializer mínimo para mostrar usuario asignado."""
+    id = serializers.IntegerField()
+    nombre = serializers.CharField(source='get_full_name')
+    email = serializers.EmailField()
+    tipo_usuario = serializers.CharField()
+
+
 class ClienteSerializer(serializers.ModelSerializer):
     """Serializer básico de Cliente."""
     
     industria_nombre = serializers.CharField(source='industria.nombre', read_only=True, allow_null=True)
     nombre_display = serializers.CharField(read_only=True)
+    usuario_asignado_info = serializers.SerializerMethodField()
+    supervisor_heredado_info = serializers.SerializerMethodField()
     
     class Meta:
         model = Cliente
@@ -30,11 +40,36 @@ class ClienteSerializer(serializers.ModelSerializer):
             'nombre_display',
             'industria',
             'industria_nombre',
+            'usuario_asignado',
+            'usuario_asignado_info',
+            'supervisor_heredado_info',
             'bilingue',
             'activo',
             'fecha_registro',
         ]
         read_only_fields = ['id', 'fecha_registro']
+    
+    def get_usuario_asignado_info(self, obj):
+        """Retorna información del usuario asignado."""
+        if obj.usuario_asignado:
+            return {
+                'id': obj.usuario_asignado.id,
+                'nombre': obj.usuario_asignado.get_full_name(),
+                'email': obj.usuario_asignado.email,
+                'tipo_usuario': obj.usuario_asignado.tipo_usuario,
+            }
+        return None
+    
+    def get_supervisor_heredado_info(self, obj):
+        """Retorna información del supervisor que hereda acceso."""
+        supervisor = obj.get_supervisor_heredado()
+        if supervisor:
+            return {
+                'id': supervisor.id,
+                'nombre': supervisor.get_full_name(),
+                'email': supervisor.email,
+            }
+        return None
 
 
 class ClienteDetailSerializer(serializers.ModelSerializer):
@@ -43,7 +78,8 @@ class ClienteDetailSerializer(serializers.ModelSerializer):
     industria = IndustriaSerializer(read_only=True)
     nombre_display = serializers.CharField(read_only=True)
     servicios_activos = serializers.SerializerMethodField()
-    analistas_asignados = serializers.SerializerMethodField()
+    usuario_asignado_info = serializers.SerializerMethodField()
+    supervisor_heredado_info = serializers.SerializerMethodField()
     
     class Meta:
         model = Cliente
@@ -54,6 +90,9 @@ class ClienteDetailSerializer(serializers.ModelSerializer):
             'nombre_comercial',
             'nombre_display',
             'industria',
+            'usuario_asignado',
+            'usuario_asignado_info',
+            'supervisor_heredado_info',
             'bilingue',
             'contacto_nombre',
             'contacto_email',
@@ -63,7 +102,6 @@ class ClienteDetailSerializer(serializers.ModelSerializer):
             'fecha_registro',
             'fecha_actualizacion',
             'servicios_activos',
-            'analistas_asignados',
         ]
     
     def get_servicios_activos(self, obj):
@@ -72,11 +110,27 @@ class ClienteDetailSerializer(serializers.ModelSerializer):
         servicios = obj.get_servicios_activos()
         return ServicioClienteSerializer(servicios, many=True).data
     
-    def get_analistas_asignados(self, obj):
-        """Retorna los analistas asignados al cliente."""
-        from .usuario import UsuarioSerializer
-        analistas = obj.get_analistas_asignados()
-        return UsuarioSerializer(analistas, many=True).data
+    def get_usuario_asignado_info(self, obj):
+        """Retorna información del usuario asignado."""
+        if obj.usuario_asignado:
+            return {
+                'id': obj.usuario_asignado.id,
+                'nombre': obj.usuario_asignado.get_full_name(),
+                'email': obj.usuario_asignado.email,
+                'tipo_usuario': obj.usuario_asignado.tipo_usuario,
+            }
+        return None
+    
+    def get_supervisor_heredado_info(self, obj):
+        """Retorna información del supervisor que hereda acceso."""
+        supervisor = obj.get_supervisor_heredado()
+        if supervisor:
+            return {
+                'id': supervisor.id,
+                'nombre': supervisor.get_full_name(),
+                'email': supervisor.email,
+            }
+        return None
 
 
 class ClienteCreateSerializer(serializers.ModelSerializer):

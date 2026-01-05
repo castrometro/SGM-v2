@@ -12,7 +12,6 @@ from .views import (
     IndustriaViewSet,
     ServicioViewSet,
     ServicioClienteViewSet,
-    AsignacionClienteUsuarioViewSet,
 )
 
 router = DefaultRouter()
@@ -21,7 +20,6 @@ router.register(r'clientes', ClienteViewSet, basename='cliente')
 router.register(r'industrias', IndustriaViewSet, basename='industria')
 router.register(r'servicios', ServicioViewSet, basename='servicio')
 router.register(r'servicios-cliente', ServicioClienteViewSet, basename='servicio-cliente')
-router.register(r'asignaciones', AsignacionClienteUsuarioViewSet, basename='asignacion')
 
 urlpatterns = [
     path('me/', MeView.as_view(), name='me'),

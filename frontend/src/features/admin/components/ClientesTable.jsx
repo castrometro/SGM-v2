@@ -1,8 +1,9 @@
 /**
  * Tabla de Clientes con acciones
+ * Issue #7: Muestra usuario asignado y supervisor heredado
  */
 import { useState } from 'react'
-import { Building2, Edit2, Trash2, ToggleLeft, ToggleRight, Eye, Users } from 'lucide-react'
+import { Building2, Edit2, Trash2, ToggleLeft, ToggleRight, Eye, UserCheck, ShieldCheck } from 'lucide-react'
 import { Table, Badge, Button, ConfirmDialog } from '../../../components/ui'
 import { useToggleClienteActivo, useDeleteCliente } from '../hooks/useClientes'
 import { toast } from 'react-hot-toast'
@@ -57,7 +58,7 @@ const ClientesTable = ({ clientes = [], onEdit, onView, onManageAsignaciones }) 
             <Table.Head>Cliente</Table.Head>
             <Table.Head>RUT</Table.Head>
             <Table.Head>Industria</Table.Head>
-            <Table.Head>Asignaciones</Table.Head>
+            <Table.Head>Usuario Asignado</Table.Head>
             <Table.Head>Contacto</Table.Head>
             <Table.Head align="center">Estado</Table.Head>
             <Table.Head align="right">Acciones</Table.Head>
@@ -101,18 +102,27 @@ const ClientesTable = ({ clientes = [], onEdit, onView, onManageAsignaciones }) 
                 <button
                   onClick={() => onManageAsignaciones && onManageAsignaciones(cliente)}
                   className="flex flex-col gap-1 text-left hover:bg-secondary-800 rounded-lg p-1.5 -m-1.5 transition-colors"
-                  title="Gestionar asignaciones"
+                  title="Gestionar asignación"
                 >
-                  {cliente.supervisor_nombre ? (
-                    <span className="text-xs text-secondary-300">
-                      <span className="text-secondary-500">Sup:</span> {cliente.supervisor_nombre}
-                    </span>
+                  {cliente.usuario_asignado_info ? (
+                    <>
+                      <span className="flex items-center gap-1 text-xs text-secondary-300">
+                        <UserCheck className="w-3 h-3" />
+                        {cliente.usuario_asignado_info.nombre}
+                        <Badge variant={cliente.usuario_asignado_info.tipo_usuario === 'supervisor' ? 'primary' : 'secondary'} className="ml-1 text-[10px] py-0">
+                          {cliente.usuario_asignado_info.tipo_usuario === 'supervisor' ? 'Sup' : 'Ana'}
+                        </Badge>
+                      </span>
+                      {cliente.supervisor_heredado_info && (
+                        <span className="flex items-center gap-1 text-xs text-primary-400/70">
+                          <ShieldCheck className="w-3 h-3" />
+                          {cliente.supervisor_heredado_info.nombre}
+                        </span>
+                      )}
+                    </>
                   ) : (
-                    <span className="text-xs text-warning-400">Sin supervisor</span>
+                    <span className="text-xs text-warning-400">Sin asignar</span>
                   )}
-                  <span className="text-xs text-secondary-500">
-                    {cliente.total_analistas || 0} analista(s)
-                  </span>
                 </button>
               </Table.Cell>
               <Table.Cell>
@@ -149,9 +159,9 @@ const ClientesTable = ({ clientes = [], onEdit, onView, onManageAsignaciones }) 
                       variant="ghost"
                       size="sm"
                       onClick={() => onManageAsignaciones(cliente)}
-                      title="Gestionar asignaciones"
+                      title="Asignar usuario"
                     >
-                      <Users className="h-4 w-4 text-primary-400" />
+                      <UserCheck className="h-4 w-4 text-primary-400" />
                     </Button>
                   )}
                   <Button

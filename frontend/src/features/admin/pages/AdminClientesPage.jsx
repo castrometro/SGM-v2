@@ -7,7 +7,6 @@ import { Building2, Plus, Search, Filter, Download, RefreshCw } from 'lucide-rea
 import { Card, CardContent, CardHeader, CardTitle, Button, Select, Badge } from '../../../components/ui'
 import { ClientesTable, ClienteModal, AsignacionClienteModal } from '../components'
 import { useClientes, useIndustrias } from '../hooks/useClientes'
-import { useClientesConAsignaciones } from '../hooks/useAsignaciones'
 import { toast } from 'react-hot-toast'
 
 const AdminClientesPage = () => {
@@ -24,13 +23,13 @@ const AdminClientesPage = () => {
   const [asignacionModalOpen, setAsignacionModalOpen] = useState(false)
   const [clienteAsignacion, setClienteAsignacion] = useState(null)
 
-  // Queries - usar clientesConAsignaciones para mostrar supervisor y total_analistas
+  // Queries - clientes ya incluyen usuario_asignado_info y supervisor_heredado_info
   const { 
     data: clientes = [], 
     isLoading, 
     isRefetching,
     refetch 
-  } = useClientesConAsignaciones({ 
+  } = useClientes({ 
     search, 
     activo: filterActivo, 
     industria: filterIndustria 

@@ -1,40 +1,39 @@
 /**
- * Modal para gestionar asignaciones de un cliente
+ * Modal simplificado para asignar UN usuario a un cliente
+ * Issue #7: Un cliente = Un usuario asignado
  */
 import { useState, useEffect } from 'react'
 import { 
   Building2, 
   User, 
-  UserPlus, 
+  UserCheck,
+  UserX,
   X, 
   Loader2,
-  AlertTriangle
+  AlertTriangle,
+  ShieldCheck
 } from 'lucide-react'
 import Modal from '../../../components/ui/Modal'
 import Button from '../../../components/ui/Button'
 import { Badge, Select } from '../../../components/ui'
-import { 
-  useAsignacionesCliente, 
-  useAsignarAnalista, 
-  useDesasignarAnalista 
-} from '../hooks'
+import { useInfoAsignacion, useAsignarUsuario, useDesasignarUsuario } from '../hooks'
 import { useUsuarios } from '../hooks'
 import toast from 'react-hot-toast'
 
 const AsignacionClienteModal = ({ 
   isOpen, 
   onClose, 
-  cliente // { id, nombre, rut }
+  cliente // { id, nombre_display, rut }
 }) => {
   const [selectedUsuario, setSelectedUsuario] = useState('')
   
   // Queries
-  const { data: asignaciones, isLoading: loadingAsignaciones } = useAsignacionesCliente(cliente?.id)
+  const { data: infoAsignacion, isLoading } = useInfoAsignacion(cliente?.id)
   const { data: todosUsuarios = [] } = useUsuarios()
   
   // Mutations
-  const asignarAnalista = useAsignarAnalista()
-  const desasignarAnalista = useDesasignarAnalista()
+  const asignarUsuario = useAsignarUsuario()
+  const desasignarUsuario = useDesasignarUsuario()
   
   // Reset al cerrar
   useEffect(() => {
@@ -43,22 +42,18 @@ const AsignacionClienteModal = ({
     }
   }, [isOpen])
   
-  // Filtrar usuarios disponibles para asignar (analistas y supervisores no asignados)
-  const usuariosAsignados = asignaciones?.analistas?.map(a => a.usuario) || []
+  // Filtrar usuarios disponibles (analistas y supervisores activos)
   const usuariosDisponibles = todosUsuarios.filter(
-    u => (u.tipo_usuario === 'analista' || u.tipo_usuario === 'supervisor') && 
-         u.is_active &&
-         !usuariosAsignados.includes(u.id)
+    u => (u.tipo_usuario === 'analista' || u.tipo_usuario === 'supervisor') && u.is_active
   )
   
   const handleAsignarUsuario = async () => {
     if (!selectedUsuario) return
     
     try {
-      await asignarAnalista.mutateAsync({
+      await asignarUsuario.mutateAsync({
         clienteId: cliente.id,
-        usuarioId: parseInt(selectedUsuario),
-        esPrincipal: usuariosAsignados.length === 0
+        usuarioId: parseInt(selectedUsuario)
       })
       setSelectedUsuario('')
       toast.success('Usuario asignado al cliente')
@@ -67,12 +62,9 @@ const AsignacionClienteModal = ({
     }
   }
   
-  const handleDesasignarUsuario = async (usuarioId) => {
+  const handleDesasignarUsuario = async () => {
     try {
-      await desasignarAnalista.mutateAsync({
-        clienteId: cliente.id,
-        usuarioId
-      })
+      await desasignarUsuario.mutateAsync({ clienteId: cliente.id })
       toast.success('Usuario desasignado')
     } catch (error) {
       toast.error('Error al desasignar usuario')
@@ -81,12 +73,15 @@ const AsignacionClienteModal = ({
   
   if (!cliente) return null
   
+  const usuarioAsignado = infoAsignacion?.usuario_asignado
+  const supervisorHeredado = infoAsignacion?.supervisor_heredado
+  
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Gestionar Asignaciones"
-      size="lg"
+      title="Asignar Usuario"
+      size="md"
     >
       <div className="space-y-6">
         {/* Info del cliente */}
@@ -95,95 +90,120 @@ const AsignacionClienteModal = ({
             <Building2 className="h-6 w-6 text-primary-400" />
           </div>
           <div>
-            <h3 className="font-semibold text-white">{cliente.nombre_display || cliente.nombre}</h3>
+            <h3 className="font-semibold text-white">{cliente.nombre_display || cliente.razon_social}</h3>
             <p className="text-sm text-secondary-400">{cliente.rut}</p>
           </div>
         </div>
         
-        {loadingAsignaciones ? (
+        {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
           </div>
         ) : (
-          <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-secondary-400 uppercase tracking-wider flex items-center gap-2">
-              <User className="w-4 h-4" />
-              Usuarios Asignados ({asignaciones?.analistas?.length || 0})
-            </h4>
-            
-            {/* Agregar usuario */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1">
-                <Select
-                  value={selectedUsuario}
-                  onChange={(e) => setSelectedUsuario(e.target.value)}
-                  placeholder="Seleccionar usuario..."
-                  options={[
-                    { value: '', label: 'Seleccionar usuario para asignar...' },
-                    ...usuariosDisponibles.map(u => ({
-                      value: u.id.toString(),
-                      label: `${u.nombre} ${u.apellido}`
-                    }))
-                  ]}
-                />
-              </div>
-              <Button
-                onClick={handleAsignarUsuario}
-                disabled={!selectedUsuario || asignarAnalista.isPending}
-                size="sm"
-              >
-                {asignarAnalista.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <UserPlus className="w-4 h-4" />
-                )}
-                Agregar
-              </Button>
+          <div className="space-y-4">
+            {/* Usuario asignado actual */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold text-secondary-400 uppercase tracking-wider flex items-center gap-2">
+                <UserCheck className="w-4 h-4" />
+                Usuario Asignado
+              </h4>
+              
+              {usuarioAsignado ? (
+                <div className="flex items-center justify-between p-4 bg-secondary-800 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center">
+                      <User className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-white">{usuarioAsignado.nombre}</p>
+                      <p className="text-xs text-secondary-400">{usuarioAsignado.email}</p>
+                    </div>
+                    <Badge 
+                      variant={usuarioAsignado.tipo_usuario === 'supervisor' ? 'primary' : 'secondary'}
+                      className="ml-2"
+                    >
+                      {usuarioAsignado.tipo_usuario === 'supervisor' ? 'Supervisor' : 'Analista'}
+                    </Badge>
+                  </div>
+                  <button
+                    onClick={handleDesasignarUsuario}
+                    disabled={desasignarUsuario.isPending}
+                    className="p-2 rounded-lg text-secondary-400 hover:text-danger-400 hover:bg-danger-500/10 transition-colors"
+                    title="Desasignar"
+                  >
+                    {desasignarUsuario.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <X className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 p-4 bg-warning-500/10 rounded-lg border border-warning-500/20">
+                  <AlertTriangle className="w-5 h-5 text-warning-400" />
+                  <span className="text-sm text-warning-400">
+                    Este cliente no tiene usuario asignado
+                  </span>
+                </div>
+              )}
             </div>
             
-            {/* Lista de usuarios asignados */}
-            {asignaciones?.analistas?.length > 0 ? (
-              <div className="space-y-2">
-                {asignaciones.analistas.map((asig) => (
-                  <div 
-                    key={asig.id}
-                    className="flex items-center justify-between p-3 bg-secondary-800 rounded-lg"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center">
-                        <User className="w-4 h-4 text-white" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-white">
-                          {asig.usuario_info?.nombre_completo || asig.usuario_nombre}
-                        </p>
-                        <p className="text-xs text-secondary-400">
-                          {asig.usuario_info?.email}
-                        </p>
-                      </div>
-                      {asig.es_principal && (
-                        <Badge variant="success" className="ml-2">Principal</Badge>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => handleDesasignarUsuario(asig.usuario)}
-                      disabled={desasignarAnalista.isPending}
-                      className="p-2 rounded-lg text-secondary-400 hover:text-danger-400 hover:bg-danger-500/10 transition-colors"
-                      title="Desasignar"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+            {/* Supervisor heredado (si el asignado es analista) */}
+            {supervisorHeredado && (
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold text-secondary-400 uppercase tracking-wider flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4" />
+                  Supervisor con Acceso Heredado
+                </h4>
+                <div className="flex items-center gap-3 p-3 bg-primary-500/10 rounded-lg border border-primary-500/20">
+                  <div className="w-8 h-8 rounded-full bg-primary-600/30 flex items-center justify-center">
+                    <ShieldCheck className="w-4 h-4 text-primary-400" />
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 p-4 bg-warning-500/10 rounded-lg border border-warning-500/20">
-                <AlertTriangle className="w-5 h-5 text-warning-400" />
-                <span className="text-sm text-warning-400">
-                  Este cliente no tiene usuarios asignados
-                </span>
+                  <div>
+                    <p className="font-medium text-primary-300">{supervisorHeredado.nombre}</p>
+                    <p className="text-xs text-primary-400/70">{supervisorHeredado.email}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-secondary-500 italic">
+                  Este supervisor hereda acceso automáticamente porque supervisa al analista asignado.
+                </p>
               </div>
             )}
+            
+            {/* Asignar nuevo usuario */}
+            <div className="space-y-3 pt-4 border-t border-secondary-700">
+              <h4 className="text-sm font-semibold text-secondary-400 uppercase tracking-wider flex items-center gap-2">
+                <UserX className="w-4 h-4" />
+                {usuarioAsignado ? 'Cambiar Usuario' : 'Asignar Usuario'}
+              </h4>
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <Select
+                    value={selectedUsuario}
+                    onChange={(e) => setSelectedUsuario(e.target.value)}
+                    options={[
+                      { value: '', label: 'Seleccionar usuario...' },
+                      ...usuariosDisponibles.map(u => ({
+                        value: u.id.toString(),
+                        label: `${u.nombre} ${u.apellido} (${u.tipo_usuario})`
+                      }))
+                    ]}
+                  />
+                </div>
+                <Button
+                  onClick={handleAsignarUsuario}
+                  disabled={!selectedUsuario || asignarUsuario.isPending}
+                  size="sm"
+                >
+                  {asignarUsuario.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <UserCheck className="w-4 h-4" />
+                  )}
+                  {usuarioAsignado ? 'Cambiar' : 'Asignar'}
+                </Button>
+              </div>
+            </div>
           </div>
         )}
         

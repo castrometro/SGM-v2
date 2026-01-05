@@ -7,16 +7,14 @@ from .usuario import (
     ResetPasswordSerializer,
     ChangePasswordSerializer,
 )
-from .cliente import ClienteSerializer, ClienteDetailSerializer, ClienteCreateSerializer, IndustriaSerializer
-from .servicio import ServicioSerializer, ServicioClienteSerializer
-from .asignacion import (
-    AsignacionClienteUsuarioSerializer,
-    AsignarAnalistaSerializer,
-    AsignarSupervisorSerializer,
-    ClienteConAsignacionesSerializer,
-    CargaTrabajoSupervisorSerializer,
-    UsuarioMiniSerializer,
+from .cliente import (
+    ClienteSerializer, 
+    ClienteDetailSerializer, 
+    ClienteCreateSerializer, 
+    IndustriaSerializer,
+    UsuarioAsignadoSerializer,
 )
+from .servicio import ServicioSerializer, ServicioClienteSerializer
 
 __all__ = [
     'UsuarioSerializer',
@@ -31,10 +29,5 @@ __all__ = [
     'ClienteCreateSerializer',
     'ServicioSerializer',
     'ServicioClienteSerializer',
-    'AsignacionClienteUsuarioSerializer',
-    'AsignarAnalistaSerializer',
-    'AsignarSupervisorSerializer',
-    'ClienteConAsignacionesSerializer',
-    'CargaTrabajoSupervisorSerializer',
-    'UsuarioMiniSerializer',
+    'UsuarioAsignadoSerializer',
 ]

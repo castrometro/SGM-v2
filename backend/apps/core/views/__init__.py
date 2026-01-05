@@ -2,7 +2,6 @@
 from .usuario import UsuarioViewSet, MeView
 from .cliente import ClienteViewSet, IndustriaViewSet
 from .servicio import ServicioViewSet, ServicioClienteViewSet
-from .asignacion import AsignacionClienteUsuarioViewSet
 
 __all__ = [
     'UsuarioViewSet',
@@ -11,5 +10,4 @@ __all__ = [
     'IndustriaViewSet',
     'ServicioViewSet',
     'ServicioClienteViewSet',
-    'AsignacionClienteUsuarioViewSet',
 ]
