@@ -2,6 +2,7 @@
 Views de Usuario para SGM v2.
 """
 
+from django.db import models
 from rest_framework import viewsets, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -14,7 +15,10 @@ from apps.core.models import Usuario
 from apps.core.serializers import (
     UsuarioSerializer, 
     UsuarioCreateSerializer,
-    UsuarioMeSerializer
+    UsuarioUpdateSerializer,
+    UsuarioMeSerializer,
+    ResetPasswordSerializer,
+    ChangePasswordSerializer,
 )
 from shared.permissions import IsGerente, IsSupervisor
 
@@ -35,10 +39,14 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'create':
             return UsuarioCreateSerializer
+        if self.action in ['update', 'partial_update']:
+            return UsuarioUpdateSerializer
+        if self.action == 'reset_password':
+            return ResetPasswordSerializer
         return UsuarioSerializer
     
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'reset_password', 'todos']:
             return [IsAuthenticated(), IsGerente()]
         return [IsAuthenticated()]
     
@@ -61,6 +69,38 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         # Otros solo se ven a sí mismos
         return queryset.filter(id=user.id)
     
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, IsGerente])
+    def todos(self, request):
+        """Lista todos los usuarios (solo para gerentes)."""
+        queryset = Usuario.objects.select_related('supervisor').all()
+        
+        # Aplicar búsqueda
+        search = request.query_params.get('search', '')
+        if search:
+            queryset = queryset.filter(
+                models.Q(nombre__icontains=search) |
+                models.Q(apellido__icontains=search) |
+                models.Q(email__icontains=search)
+            )
+        
+        # Filtrar por tipo_usuario
+        tipo = request.query_params.get('tipo_usuario')
+        if tipo:
+            queryset = queryset.filter(tipo_usuario=tipo)
+        
+        # Filtrar por estado activo
+        activo = request.query_params.get('is_active')
+        if activo is not None:
+            queryset = queryset.filter(is_active=activo.lower() == 'true')
+        
+        # Filtrar por supervisor
+        supervisor = request.query_params.get('supervisor')
+        if supervisor:
+            queryset = queryset.filter(supervisor_id=supervisor)
+        
+        serializer = UsuarioSerializer(queryset, many=True)
+        return Response(serializer.data)
+    
     @action(detail=False, methods=['get'])
     def analistas(self, request):
         """Lista solo usuarios con rol de analista."""
@@ -74,6 +114,41 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         supervisores = Usuario.objects.filter(tipo_usuario='supervisor', is_active=True)
         serializer = self.get_serializer(supervisores, many=True)
         return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsGerente])
+    def reset_password(self, request, pk=None):
+        """Resetea la contraseña de un usuario (solo gerentes)."""
+        usuario = self.get_object()
+        serializer = ResetPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        usuario.set_password(serializer.validated_data['new_password'])
+        usuario.save()
+        
+        return Response({
+            'message': f'Contraseña de {usuario.get_full_name()} actualizada correctamente.'
+        })
+    
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsGerente])
+    def toggle_active(self, request, pk=None):
+        """Activa/desactiva un usuario."""
+        usuario = self.get_object()
+        
+        # No permitir desactivarse a sí mismo
+        if usuario == request.user:
+            return Response(
+                {'error': 'No puedes desactivar tu propia cuenta.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        usuario.is_active = not usuario.is_active
+        usuario.save()
+        
+        estado = 'activado' if usuario.is_active else 'desactivado'
+        return Response({
+            'message': f'Usuario {usuario.get_full_name()} {estado} correctamente.',
+            'is_active': usuario.is_active
+        })
 
 
 class MeView(APIView):

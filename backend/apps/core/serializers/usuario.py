@@ -118,3 +118,57 @@ class UsuarioMeSerializer(serializers.ModelSerializer):
         
         # Analistas y seniors: sus clientes directos
         return list(obj.asignaciones.filter(activa=True).values_list('cliente_id', flat=True))
+
+
+class UsuarioUpdateSerializer(serializers.ModelSerializer):
+    """Serializer para actualizar usuarios (sin password)."""
+    
+    class Meta:
+        model = Usuario
+        fields = [
+            'email',
+            'nombre',
+            'apellido',
+            'tipo_usuario',
+            'cargo',
+            'supervisor',
+            'is_active',
+        ]
+    
+    def validate_supervisor(self, value):
+        """Valida que el supervisor sea válido."""
+        if value and value.tipo_usuario not in ['supervisor', 'gerente']:
+            raise serializers.ValidationError(
+                'El supervisor debe tener rol de Supervisor o Gerente.'
+            )
+        return value
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    """Serializer para resetear contraseña."""
+    
+    new_password = serializers.CharField(write_only=True, min_length=8)
+    confirm_password = serializers.CharField(write_only=True)
+    
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['confirm_password']:
+            raise serializers.ValidationError({
+                'confirm_password': 'Las contraseñas no coinciden.'
+            })
+        return attrs
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """Serializer para que el usuario cambie su propia contraseña."""
+    
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+    confirm_password = serializers.CharField(write_only=True)
+    
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['confirm_password']:
+            raise serializers.ValidationError({
+                'confirm_password': 'Las contraseñas no coinciden.'
+            })
+        return attrs
+
