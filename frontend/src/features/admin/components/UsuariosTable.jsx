@@ -3,23 +3,23 @@
  */
 import { useState } from 'react'
 import { 
-  UserIcon,
-  PencilIcon, 
-  KeyIcon, 
-  TrashIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-  ShieldCheckIcon,
-  UserGroupIcon,
-  BriefcaseIcon
-} from '@heroicons/react/24/outline'
+  User,
+  Pencil, 
+  Key, 
+  Trash2,
+  CheckCircle,
+  XCircle,
+  Shield,
+  Users,
+  Briefcase
+} from 'lucide-react'
 import { Table, Badge, ConfirmDialog } from '../../../components/ui'
 
 // Configuración de badges por tipo de usuario
 const tipoUsuarioBadge = {
-  gerente: { variant: 'danger', icon: ShieldCheckIcon, label: 'Gerente' },
-  supervisor: { variant: 'warning', icon: UserGroupIcon, label: 'Supervisor' },
-  analista: { variant: 'info', icon: BriefcaseIcon, label: 'Analista' },
+  gerente: { variant: 'danger', icon: Shield, label: 'Gerente' },
+  supervisor: { variant: 'warning', icon: Users, label: 'Supervisor' },
+  analista: { variant: 'info', icon: Briefcase, label: 'Analista' },
 }
 
 const UsuariosTable = ({
@@ -97,7 +97,7 @@ const UsuariosTable = ({
       render: (_, usuario) => (
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center shadow-lg">
-            <UserIcon className="w-5 h-5 text-white" />
+            <User className="w-5 h-5 text-white" />
           </div>
           <div>
             <p className="font-medium text-white">
@@ -155,12 +155,12 @@ const UsuariosTable = ({
         >
           {isActive ? (
             <>
-              <CheckCircleIcon className="w-3.5 h-3.5" />
+              <CheckCircle className="w-3.5 h-3.5" />
               Activo
             </>
           ) : (
             <>
-              <XCircleIcon className="w-3.5 h-3.5" />
+              <XCircle className="w-3.5 h-3.5" />
               Inactivo
             </>
           )}
@@ -180,7 +180,7 @@ const UsuariosTable = ({
               className="p-2 rounded-lg text-secondary-400 hover:text-white hover:bg-secondary-700 transition-colors"
               title="Editar"
             >
-              <PencilIcon className="w-4 h-4" />
+              <Pencil className="w-4 h-4" />
             </button>
             
             <button
@@ -196,9 +196,9 @@ const UsuariosTable = ({
               title={usuario.is_active ? 'Desactivar' : 'Activar'}
             >
               {usuario.is_active ? (
-                <XCircleIcon className="w-4 h-4" />
+                <XCircle className="w-4 h-4" />
               ) : (
-                <CheckCircleIcon className="w-4 h-4" />
+                <CheckCircle className="w-4 h-4" />
               )}
             </button>
             
@@ -207,7 +207,7 @@ const UsuariosTable = ({
               className="p-2 rounded-lg text-secondary-400 hover:text-warning-400 hover:bg-warning-500/10 transition-colors"
               title="Resetear contraseña"
             >
-              <KeyIcon className="w-4 h-4" />
+              <Key className="w-4 h-4" />
             </button>
             
             <button
@@ -220,7 +220,7 @@ const UsuariosTable = ({
               }`}
               title={isCurrentUser ? 'No puede eliminar su propio usuario' : 'Eliminar'}
             >
-              <TrashIcon className="w-4 h-4" />
+              <Trash2 className="w-4 h-4" />
             </button>
           </div>
         )

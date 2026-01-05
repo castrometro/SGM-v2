@@ -4,16 +4,16 @@
  */
 import { useState, useMemo } from 'react'
 import { 
-  UsersIcon, 
-  PlusIcon, 
-  MagnifyingGlassIcon,
-  ShieldCheckIcon,
-  UserGroupIcon,
-  BriefcaseIcon,
-  CheckCircleIcon,
-  XCircleIcon
-} from '@heroicons/react/24/outline'
-import { useAuth } from '../../../context/AuthContext'
+  Users, 
+  Plus, 
+  Search,
+  Shield,
+  UserCheck,
+  Briefcase,
+  CheckCircle,
+  XCircle
+} from 'lucide-react'
+import { useAuth } from '../../../contexts/AuthContext'
 import { Card, CardContent, Modal, Select } from '../../../components/ui'
 import Button from '../../../components/ui/Button'
 import { 
@@ -170,7 +170,7 @@ const UsuariosPage = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-secondary-100 flex items-center gap-3">
-            <UsersIcon className="h-7 w-7 text-primary-500" />
+            <Users className="h-7 w-7 text-primary-500" />
             Usuarios
           </h1>
           <p className="text-secondary-400 mt-1">
@@ -178,7 +178,7 @@ const UsuariosPage = () => {
           </p>
         </div>
         <Button onClick={handleCreate}>
-          <PlusIcon className="h-4 w-4" />
+          <Plus className="h-4 w-4" />
           Nuevo Usuario
         </Button>
       </div>
@@ -188,7 +188,7 @@ const UsuariosPage = () => {
         <Card className="bg-secondary-800/50 border-secondary-700">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <UsersIcon className="h-8 w-8 text-primary-500" />
+              <Users className="h-8 w-8 text-primary-500" />
               <div>
                 <p className="text-2xl font-bold text-white">{stats.total}</p>
                 <p className="text-xs text-secondary-400">Total</p>
@@ -200,7 +200,7 @@ const UsuariosPage = () => {
         <Card className="bg-secondary-800/50 border-secondary-700">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <ShieldCheckIcon className="h-8 w-8 text-danger-500" />
+              <Shield className="h-8 w-8 text-danger-500" />
               <div>
                 <p className="text-2xl font-bold text-white">{stats.gerentes}</p>
                 <p className="text-xs text-secondary-400">Gerentes</p>
@@ -212,7 +212,7 @@ const UsuariosPage = () => {
         <Card className="bg-secondary-800/50 border-secondary-700">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <UserGroupIcon className="h-8 w-8 text-warning-500" />
+              <UserCheck className="h-8 w-8 text-warning-500" />
               <div>
                 <p className="text-2xl font-bold text-white">{stats.supervisores}</p>
                 <p className="text-xs text-secondary-400">Supervisores</p>
@@ -224,7 +224,7 @@ const UsuariosPage = () => {
         <Card className="bg-secondary-800/50 border-secondary-700">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <BriefcaseIcon className="h-8 w-8 text-info-500" />
+              <Briefcase className="h-8 w-8 text-info-500" />
               <div>
                 <p className="text-2xl font-bold text-white">{stats.analistas}</p>
                 <p className="text-xs text-secondary-400">Analistas</p>
@@ -236,7 +236,7 @@ const UsuariosPage = () => {
         <Card className="bg-secondary-800/50 border-secondary-700">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <CheckCircleIcon className="h-8 w-8 text-success-500" />
+              <CheckCircle className="h-8 w-8 text-success-500" />
               <div>
                 <p className="text-2xl font-bold text-white">{stats.activos}</p>
                 <p className="text-xs text-secondary-400">Activos</p>
@@ -248,7 +248,7 @@ const UsuariosPage = () => {
         <Card className="bg-secondary-800/50 border-secondary-700">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <XCircleIcon className="h-8 w-8 text-secondary-500" />
+              <XCircle className="h-8 w-8 text-secondary-500" />
               <div>
                 <p className="text-2xl font-bold text-white">{stats.inactivos}</p>
                 <p className="text-xs text-secondary-400">Inactivos</p>
@@ -264,7 +264,7 @@ const UsuariosPage = () => {
           <div className="flex flex-col md:flex-row gap-4">
             {/* Búsqueda */}
             <div className="relative flex-1">
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-secondary-500" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-secondary-500" />
               <input
                 type="text"
                 placeholder="Buscar por nombre, email o cargo..."
