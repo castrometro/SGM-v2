@@ -258,7 +258,7 @@ const AdminClientesPage = () => {
 
       {/* Modal de Asignaciones */}
       <AsignacionClienteModal
-        open={asignacionModalOpen}
+        isOpen={asignacionModalOpen}
         onClose={handleCloseAsignacionModal}
         cliente={clienteAsignacion}
       />
