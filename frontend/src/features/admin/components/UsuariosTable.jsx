@@ -11,9 +11,12 @@ import {
   XCircle,
   Shield,
   Users,
-  Briefcase
+  Briefcase,
+  Loader2
 } from 'lucide-react'
-import { Table, Badge, ConfirmDialog } from '../../../components/ui'
+import Table from '../../../components/ui/Table'
+import Badge from '../../../components/ui/Badge'
+import ConfirmDialog from '../../../components/ui/ConfirmDialog'
 
 // Configuración de badges por tipo de usuario
 const tipoUsuarioBadge = {
@@ -29,11 +32,11 @@ const UsuariosTable = ({
   onToggleActive,
   onResetPassword,
   onDelete,
-  currentUserId, // ID del usuario actual para evitar auto-eliminación
+  currentUserId,
 }) => {
   const [confirmDialog, setConfirmDialog] = useState({
     open: false,
-    type: null, // 'delete' | 'toggleActive' | 'resetPassword'
+    type: null,
     usuario: null,
   })
 
@@ -90,152 +93,159 @@ const UsuariosTable = ({
     return configs[type] || {}
   }
 
-  const columns = [
-    {
-      key: 'nombre_completo',
-      header: 'Usuario',
-      render: (_, usuario) => (
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center shadow-lg">
-            <User className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <p className="font-medium text-white">
-              {usuario.nombre} {usuario.apellido}
-            </p>
-            <p className="text-sm text-secondary-400">{usuario.email}</p>
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: 'tipo_usuario',
-      header: 'Rol',
-      render: (tipo) => {
-        const config = tipoUsuarioBadge[tipo] || tipoUsuarioBadge.analista
-        const Icon = config.icon
-        return (
-          <Badge variant={config.variant} className="flex items-center gap-1 w-fit">
-            <Icon className="w-3.5 h-3.5" />
-            {config.label}
-          </Badge>
-        )
-      },
-    },
-    {
-      key: 'cargo',
-      header: 'Cargo',
-      render: (cargo) => cargo || (
-        <span className="text-secondary-500 italic">Sin cargo</span>
-      ),
-    },
-    {
-      key: 'supervisor_info',
-      header: 'Supervisor',
-      render: (_, usuario) => {
-        if (usuario.tipo_usuario !== 'analista') {
-          return <span className="text-secondary-500">-</span>
-        }
-        return usuario.supervisor_info ? (
-          <span className="text-secondary-300">
-            {usuario.supervisor_info.nombre} {usuario.supervisor_info.apellido}
-          </span>
-        ) : (
-          <span className="text-secondary-500 italic">Sin asignar</span>
-        )
-      },
-    },
-    {
-      key: 'is_active',
-      header: 'Estado',
-      render: (isActive) => (
-        <Badge 
-          variant={isActive ? 'success' : 'secondary'}
-          className="flex items-center gap-1 w-fit"
-        >
-          {isActive ? (
-            <>
-              <CheckCircle className="w-3.5 h-3.5" />
-              Activo
-            </>
-          ) : (
-            <>
-              <XCircle className="w-3.5 h-3.5" />
-              Inactivo
-            </>
-          )}
-        </Badge>
-      ),
-    },
-    {
-      key: 'acciones',
-      header: 'Acciones',
-      render: (_, usuario) => {
-        const isCurrentUser = usuario.id === currentUserId
-        
-        return (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => onEdit?.(usuario)}
-              className="p-2 rounded-lg text-secondary-400 hover:text-white hover:bg-secondary-700 transition-colors"
-              title="Editar"
-            >
-              <Pencil className="w-4 h-4" />
-            </button>
-            
-            <button
-              onClick={() => handleAction('toggleActive', usuario)}
-              disabled={isCurrentUser}
-              className={`p-2 rounded-lg transition-colors ${
-                isCurrentUser 
-                  ? 'text-secondary-600 cursor-not-allowed' 
-                  : usuario.is_active
-                    ? 'text-secondary-400 hover:text-warning-400 hover:bg-warning-500/10'
-                    : 'text-secondary-400 hover:text-success-400 hover:bg-success-500/10'
-              }`}
-              title={usuario.is_active ? 'Desactivar' : 'Activar'}
-            >
-              {usuario.is_active ? (
-                <XCircle className="w-4 h-4" />
-              ) : (
-                <CheckCircle className="w-4 h-4" />
-              )}
-            </button>
-            
-            <button
-              onClick={() => handleAction('resetPassword', usuario)}
-              className="p-2 rounded-lg text-secondary-400 hover:text-warning-400 hover:bg-warning-500/10 transition-colors"
-              title="Resetear contraseña"
-            >
-              <Key className="w-4 h-4" />
-            </button>
-            
-            <button
-              onClick={() => handleAction('delete', usuario)}
-              disabled={isCurrentUser}
-              className={`p-2 rounded-lg transition-colors ${
-                isCurrentUser 
-                  ? 'text-secondary-600 cursor-not-allowed' 
-                  : 'text-secondary-400 hover:text-danger-400 hover:bg-danger-500/10'
-              }`}
-              title={isCurrentUser ? 'No puede eliminar su propio usuario' : 'Eliminar'}
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        )
-      },
-    },
-  ]
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+      </div>
+    )
+  }
 
   return (
     <>
-      <Table
-        columns={columns}
-        data={usuarios}
-        loading={isLoading}
-        emptyMessage="No hay usuarios registrados"
-      />
+      <Table>
+        <Table.Header>
+          <Table.Row hoverable={false}>
+            <Table.Head>Usuario</Table.Head>
+            <Table.Head>Rol</Table.Head>
+            <Table.Head>Cargo</Table.Head>
+            <Table.Head>Supervisor</Table.Head>
+            <Table.Head>Estado</Table.Head>
+            <Table.Head align="right">Acciones</Table.Head>
+          </Table.Row>
+        </Table.Header>
+        <Table.Body>
+          {usuarios.length === 0 ? (
+            <Table.Empty message="No hay usuarios registrados" colSpan={6} />
+          ) : (
+            usuarios.map((usuario) => {
+              const tipoConfig = tipoUsuarioBadge[usuario.tipo_usuario] || tipoUsuarioBadge.analista
+              const TipoIcon = tipoConfig.icon
+              const isCurrentUser = usuario.id === currentUserId
+
+              return (
+                <Table.Row key={usuario.id}>
+                  {/* Usuario */}
+                  <Table.Cell>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center shadow-lg">
+                        <User className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-white">
+                          {usuario.nombre} {usuario.apellido}
+                        </p>
+                        <p className="text-sm text-secondary-400">{usuario.email}</p>
+                      </div>
+                    </div>
+                  </Table.Cell>
+
+                  {/* Rol */}
+                  <Table.Cell>
+                    <Badge variant={tipoConfig.variant} className="flex items-center gap-1 w-fit">
+                      <TipoIcon className="w-3.5 h-3.5" />
+                      {tipoConfig.label}
+                    </Badge>
+                  </Table.Cell>
+
+                  {/* Cargo */}
+                  <Table.Cell>
+                    {usuario.cargo || (
+                      <span className="text-secondary-500 italic">Sin cargo</span>
+                    )}
+                  </Table.Cell>
+
+                  {/* Supervisor */}
+                  <Table.Cell>
+                    {usuario.tipo_usuario !== 'analista' ? (
+                      <span className="text-secondary-500">-</span>
+                    ) : usuario.supervisor_info ? (
+                      <span className="text-secondary-300">
+                        {usuario.supervisor_info.nombre} {usuario.supervisor_info.apellido}
+                      </span>
+                    ) : (
+                      <span className="text-secondary-500 italic">Sin asignar</span>
+                    )}
+                  </Table.Cell>
+
+                  {/* Estado */}
+                  <Table.Cell>
+                    <Badge 
+                      variant={usuario.is_active ? 'success' : 'secondary'}
+                      className="flex items-center gap-1 w-fit"
+                    >
+                      {usuario.is_active ? (
+                        <>
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          Activo
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="w-3.5 h-3.5" />
+                          Inactivo
+                        </>
+                      )}
+                    </Badge>
+                  </Table.Cell>
+
+                  {/* Acciones */}
+                  <Table.Cell align="right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => onEdit?.(usuario)}
+                        className="p-2 rounded-lg text-secondary-400 hover:text-white hover:bg-secondary-700 transition-colors"
+                        title="Editar"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      
+                      <button
+                        onClick={() => handleAction('toggleActive', usuario)}
+                        disabled={isCurrentUser}
+                        className={`p-2 rounded-lg transition-colors ${
+                          isCurrentUser 
+                            ? 'text-secondary-600 cursor-not-allowed' 
+                            : usuario.is_active
+                              ? 'text-secondary-400 hover:text-warning-400 hover:bg-warning-500/10'
+                              : 'text-secondary-400 hover:text-success-400 hover:bg-success-500/10'
+                        }`}
+                        title={usuario.is_active ? 'Desactivar' : 'Activar'}
+                      >
+                        {usuario.is_active ? (
+                          <XCircle className="w-4 h-4" />
+                        ) : (
+                          <CheckCircle className="w-4 h-4" />
+                        )}
+                      </button>
+                      
+                      <button
+                        onClick={() => handleAction('resetPassword', usuario)}
+                        className="p-2 rounded-lg text-secondary-400 hover:text-warning-400 hover:bg-warning-500/10 transition-colors"
+                        title="Resetear contraseña"
+                      >
+                        <Key className="w-4 h-4" />
+                      </button>
+                      
+                      <button
+                        onClick={() => handleAction('delete', usuario)}
+                        disabled={isCurrentUser}
+                        className={`p-2 rounded-lg transition-colors ${
+                          isCurrentUser 
+                            ? 'text-secondary-600 cursor-not-allowed' 
+                            : 'text-secondary-400 hover:text-danger-400 hover:bg-danger-500/10'
+                        }`}
+                        title={isCurrentUser ? 'No puede eliminar su propio usuario' : 'Eliminar'}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </Table.Cell>
+                </Table.Row>
+              )
+            })
+          )}
+        </Table.Body>
+      </Table>
       
       <ConfirmDialog
         open={confirmDialog.open}

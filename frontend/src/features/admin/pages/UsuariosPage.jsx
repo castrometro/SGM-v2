@@ -11,7 +11,9 @@ import {
   UserCheck,
   Briefcase,
   CheckCircle,
-  XCircle
+  XCircle,
+  Filter,
+  RefreshCw
 } from 'lucide-react'
 import { useAuth } from '../../../contexts/AuthContext'
 import { Card, CardContent, Modal, Select } from '../../../components/ui'
@@ -261,7 +263,7 @@ const UsuariosPage = () => {
       {/* Filtros */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex flex-col lg:flex-row gap-4">
             {/* Búsqueda */}
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-secondary-500" />
@@ -275,20 +277,49 @@ const UsuariosPage = () => {
             </div>
             
             {/* Filtro por tipo */}
-            <Select
-              value={filtroTipo}
-              onChange={(e) => setFiltroTipo(e.target.value)}
-              options={tipoOptions}
-              className="w-full md:w-48"
-            />
+            <div className="w-full lg:w-48">
+              <Select
+                value={filtroTipo}
+                onChange={(e) => setFiltroTipo(e.target.value)}
+                options={tipoOptions}
+                placeholder="Rol"
+              />
+            </div>
             
             {/* Filtro por estado */}
-            <Select
-              value={filtroEstado}
-              onChange={(e) => setFiltroEstado(e.target.value)}
-              options={estadoOptions}
-              className="w-full md:w-48"
-            />
+            <div className="w-full lg:w-48">
+              <Select
+                value={filtroEstado}
+                onChange={(e) => setFiltroEstado(e.target.value)}
+                options={estadoOptions}
+                placeholder="Estado"
+              />
+            </div>
+
+            {/* Acciones de filtro */}
+            <div className="flex items-center gap-2">
+              {(search || filtroTipo || filtroEstado) && (
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => {
+                    setSearch('')
+                    setFiltroTipo('')
+                    setFiltroEstado('')
+                  }}
+                >
+                  <Filter className="h-4 w-4" />
+                  Limpiar
+                </Button>
+              )}
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => window.location.reload()}
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
