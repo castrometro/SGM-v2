@@ -2,12 +2,12 @@
  * Tabla de Clientes con acciones
  */
 import { useState } from 'react'
-import { Building2, Edit2, Trash2, ToggleLeft, ToggleRight, Eye } from 'lucide-react'
+import { Building2, Edit2, Trash2, ToggleLeft, ToggleRight, Eye, Users } from 'lucide-react'
 import { Table, Badge, Button, ConfirmDialog } from '../../../components/ui'
 import { useToggleClienteActivo, useDeleteCliente } from '../hooks/useClientes'
 import { toast } from 'react-hot-toast'
 
-const ClientesTable = ({ clientes = [], onEdit, onView }) => {
+const ClientesTable = ({ clientes = [], onEdit, onView, onManageAsignaciones }) => {
   const [deleteModal, setDeleteModal] = useState({ open: false, cliente: null })
   
   const toggleMutation = useToggleClienteActivo()
@@ -57,6 +57,7 @@ const ClientesTable = ({ clientes = [], onEdit, onView }) => {
             <Table.Head>Cliente</Table.Head>
             <Table.Head>RUT</Table.Head>
             <Table.Head>Industria</Table.Head>
+            <Table.Head>Asignaciones</Table.Head>
             <Table.Head>Contacto</Table.Head>
             <Table.Head align="center">Estado</Table.Head>
             <Table.Head align="right">Acciones</Table.Head>
@@ -97,6 +98,24 @@ const ClientesTable = ({ clientes = [], onEdit, onView }) => {
                 )}
               </Table.Cell>
               <Table.Cell>
+                <button
+                  onClick={() => onManageAsignaciones && onManageAsignaciones(cliente)}
+                  className="flex flex-col gap-1 text-left hover:bg-secondary-800 rounded-lg p-1.5 -m-1.5 transition-colors"
+                  title="Gestionar asignaciones"
+                >
+                  {cliente.supervisor_nombre ? (
+                    <span className="text-xs text-secondary-300">
+                      <span className="text-secondary-500">Sup:</span> {cliente.supervisor_nombre}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-warning-400">Sin supervisor</span>
+                  )}
+                  <span className="text-xs text-secondary-500">
+                    {cliente.total_analistas || 0} analista(s)
+                  </span>
+                </button>
+              </Table.Cell>
+              <Table.Cell>
                 {cliente.contacto_nombre ? (
                   <div>
                     <p className="text-sm">{cliente.contacto_nombre}</p>
@@ -123,6 +142,16 @@ const ClientesTable = ({ clientes = [], onEdit, onView }) => {
                       title="Ver detalles"
                     >
                       <Eye className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {onManageAsignaciones && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onManageAsignaciones(cliente)}
+                      title="Gestionar asignaciones"
+                    >
+                      <Users className="h-4 w-4 text-primary-400" />
                     </Button>
                   )}
                   <Button

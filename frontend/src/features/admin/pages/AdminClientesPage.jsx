@@ -5,8 +5,9 @@
 import { useState, useMemo } from 'react'
 import { Building2, Plus, Search, Filter, Download, RefreshCw } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, Button, Select, Badge } from '../../../components/ui'
-import { ClientesTable, ClienteModal } from '../components'
+import { ClientesTable, ClienteModal, AsignacionClienteModal } from '../components'
 import { useClientes, useIndustrias } from '../hooks/useClientes'
+import { useClientesConAsignaciones } from '../hooks/useAsignaciones'
 import { toast } from 'react-hot-toast'
 
 const AdminClientesPage = () => {
@@ -15,17 +16,21 @@ const AdminClientesPage = () => {
   const [filterActivo, setFilterActivo] = useState('')
   const [filterIndustria, setFilterIndustria] = useState('')
   
-  // Estado del modal
+  // Estado del modal de edición
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedCliente, setSelectedCliente] = useState(null)
+  
+  // Estado del modal de asignaciones
+  const [asignacionModalOpen, setAsignacionModalOpen] = useState(false)
+  const [clienteAsignacion, setClienteAsignacion] = useState(null)
 
-  // Queries
+  // Queries - usar clientesConAsignaciones para mostrar supervisor y total_analistas
   const { 
     data: clientes = [], 
     isLoading, 
     isRefetching,
     refetch 
-  } = useClientes({ 
+  } = useClientesConAsignaciones({ 
     search, 
     activo: filterActivo, 
     industria: filterIndustria 
@@ -65,6 +70,16 @@ const AdminClientesPage = () => {
   const handleCloseModal = () => {
     setModalOpen(false)
     setSelectedCliente(null)
+  }
+
+  const handleManageAsignaciones = (cliente) => {
+    setClienteAsignacion(cliente)
+    setAsignacionModalOpen(true)
+  }
+
+  const handleCloseAsignacionModal = () => {
+    setAsignacionModalOpen(false)
+    setClienteAsignacion(null)
   }
 
   const handleClearFilters = () => {
@@ -228,6 +243,7 @@ const AdminClientesPage = () => {
             <ClientesTable 
               clientes={clientes} 
               onEdit={handleEdit}
+              onManageAsignaciones={handleManageAsignaciones}
             />
           )}
         </CardContent>
@@ -238,6 +254,13 @@ const AdminClientesPage = () => {
         isOpen={modalOpen}
         onClose={handleCloseModal}
         cliente={selectedCliente}
+      />
+
+      {/* Modal de Asignaciones */}
+      <AsignacionClienteModal
+        open={asignacionModalOpen}
+        onClose={handleCloseAsignacionModal}
+        cliente={clienteAsignacion}
       />
     </div>
   )

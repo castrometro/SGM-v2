@@ -100,6 +100,7 @@ class ClienteConAsignacionesSerializer(serializers.ModelSerializer):
     industria_nombre = serializers.CharField(source='industria.nombre', read_only=True, allow_null=True)
     nombre_display = serializers.CharField(read_only=True)
     supervisor_info = UsuarioMiniSerializer(source='supervisor', read_only=True)
+    supervisor_nombre = serializers.SerializerMethodField()
     analistas = serializers.SerializerMethodField()
     total_analistas = serializers.SerializerMethodField()
     
@@ -115,11 +116,18 @@ class ClienteConAsignacionesSerializer(serializers.ModelSerializer):
             'industria_nombre',
             'supervisor',
             'supervisor_info',
+            'supervisor_nombre',
             'analistas',
             'total_analistas',
             'activo',
             'fecha_registro',
         ]
+    
+    def get_supervisor_nombre(self, obj):
+        """Retorna el nombre del supervisor o None."""
+        if obj.supervisor:
+            return obj.supervisor.get_full_name()
+        return None
     
     def get_analistas(self, obj):
         """Retorna los analistas asignados al cliente."""
