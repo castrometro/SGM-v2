@@ -9,7 +9,14 @@ from .usuario import (
 )
 from .cliente import ClienteSerializer, ClienteDetailSerializer, ClienteCreateSerializer, IndustriaSerializer
 from .servicio import ServicioSerializer, ServicioClienteSerializer
-from .asignacion import AsignacionClienteUsuarioSerializer
+from .asignacion import (
+    AsignacionClienteUsuarioSerializer,
+    AsignarAnalistaSerializer,
+    AsignarSupervisorSerializer,
+    ClienteConAsignacionesSerializer,
+    CargaTrabajoSupervisorSerializer,
+    UsuarioMiniSerializer,
+)
 
 __all__ = [
     'UsuarioSerializer',
@@ -25,4 +32,9 @@ __all__ = [
     'ServicioSerializer',
     'ServicioClienteSerializer',
     'AsignacionClienteUsuarioSerializer',
+    'AsignarAnalistaSerializer',
+    'AsignarSupervisorSerializer',
+    'ClienteConAsignacionesSerializer',
+    'CargaTrabajoSupervisorSerializer',
+    'UsuarioMiniSerializer',
 ]

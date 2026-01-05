@@ -24,6 +24,16 @@ class AsignacionClienteUsuario(models.Model):
         verbose_name='Usuario'
     )
     
+    # Usuario que hizo la asignación
+    asignado_por = models.ForeignKey(
+        'Usuario',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='asignaciones_realizadas',
+        verbose_name='Asignado por'
+    )
+    
     # Rol en la asignación
     es_principal = models.BooleanField(
         'Es Principal',

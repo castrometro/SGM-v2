@@ -66,6 +66,18 @@ class Cliente(models.Model):
         verbose_name='Industria'
     )
     
+    # Supervisor responsable del cliente
+    supervisor = models.ForeignKey(
+        'Usuario',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='clientes_supervisados',
+        limit_choices_to={'tipo_usuario__in': ['supervisor', 'gerente']},
+        verbose_name='Supervisor Responsable',
+        help_text='Supervisor responsable de este cliente'
+    )
+    
     # Configuración
     bilingue = models.BooleanField(
         'Bilingüe',
