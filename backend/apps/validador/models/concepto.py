@@ -4,10 +4,8 @@ Maneja la clasificación de headers del Libro de Remuneraciones.
 """
 
 from django.db import models
-from django.contrib.auth import get_user_model
+from django.conf import settings
 from apps.core.models import Cliente
-
-User = get_user_model()
 
 
 class CategoriaConcepto(models.Model):
@@ -85,7 +83,7 @@ class ConceptoCliente(models.Model):
     # Estado de clasificación
     clasificado = models.BooleanField(default=False)
     clasificado_por = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -156,7 +154,7 @@ class MapeoItemNovedades(models.Model):
     
     # Quién hizo el mapeo
     mapeado_por = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True
     )

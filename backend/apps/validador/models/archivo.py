@@ -5,10 +5,8 @@ Representa los archivos Excel subidos al sistema.
 
 import os
 from django.db import models
-from django.contrib.auth import get_user_model
+from django.conf import settings
 from datetime import datetime
-
-User = get_user_model()
 
 
 def archivo_upload_path(instance, filename):
@@ -53,7 +51,7 @@ class ArchivoBase(models.Model):
     
     # Usuario que subió
     subido_por = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True
     )

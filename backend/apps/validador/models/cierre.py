@@ -4,10 +4,8 @@ Representa un proceso de validación mensual para un cliente.
 """
 
 from django.db import models
-from django.contrib.auth import get_user_model
+from django.conf import settings
 from apps.core.models import Cliente
-
-User = get_user_model()
 
 
 class Cierre(models.Model):
@@ -61,7 +59,7 @@ class Cierre(models.Model):
     
     # Usuario analista asignado
     analista = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         related_name='cierres_asignados'
@@ -95,7 +93,7 @@ class Cierre(models.Model):
     
     # Usuario que finalizó
     finalizado_por = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

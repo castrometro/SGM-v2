@@ -4,9 +4,7 @@ Detectadas al comparar con el mes anterior.
 """
 
 from django.db import models
-from django.contrib.auth import get_user_model
-
-User = get_user_model()
+from django.conf import settings
 
 
 class Incidencia(models.Model):
@@ -70,7 +68,7 @@ class Incidencia(models.Model):
     
     # Resolución
     resuelto_por = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -126,7 +124,7 @@ class ComentarioIncidencia(models.Model):
     )
     
     autor = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='comentarios_incidencias'
     )
