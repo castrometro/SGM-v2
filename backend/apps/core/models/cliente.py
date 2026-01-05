@@ -66,16 +66,17 @@ class Cliente(models.Model):
         verbose_name='Industria'
     )
     
-    # Supervisor responsable del cliente
-    supervisor = models.ForeignKey(
+    # Usuario asignado (analista o supervisor)
+    # Si es analista, su supervisor hereda acceso automáticamente
+    usuario_asignado = models.ForeignKey(
         'Usuario',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='clientes_supervisados',
-        limit_choices_to={'tipo_usuario__in': ['supervisor', 'gerente']},
-        verbose_name='Supervisor Responsable',
-        help_text='Supervisor responsable de este cliente'
+        related_name='clientes_asignados',
+        limit_choices_to={'tipo_usuario__in': ['analista', 'supervisor']},
+        verbose_name='Usuario Asignado',
+        help_text='Usuario responsable de este cliente (analista o supervisor)'
     )
     
     # Configuración
@@ -143,9 +144,15 @@ class Cliente(models.Model):
         """Obtiene los servicios activos contratados por el cliente."""
         return self.servicios_contratados.filter(activo=True).select_related('servicio')
     
-    def get_analistas_asignados(self):
-        """Obtiene los analistas asignados a este cliente."""
-        return [asig.usuario for asig in self.asignaciones.select_related('usuario').all()]
+    def get_supervisor_heredado(self):
+        """
+        Obtiene el supervisor que hereda acceso al cliente.
+        Si usuario_asignado es analista, retorna su supervisor.
+        Si usuario_asignado es supervisor, retorna None (no hay herencia).
+        """
+        if self.usuario_asignado and self.usuario_asignado.tipo_usuario == 'analista':
+            return self.usuario_asignado.supervisor
+        return None
     
     def tiene_servicio(self, codigo_servicio):
         """Verifica si el cliente tiene contratado un servicio específico."""

@@ -3,6 +3,7 @@ Views de Cliente para SGM v2.
 """
 
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.response import Response
@@ -11,17 +12,12 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
-from apps.core.models import Cliente, Industria, AsignacionClienteUsuario, Usuario
+from apps.core.models import Cliente, Industria, Usuario
 from apps.core.serializers import (
     ClienteSerializer,
     ClienteDetailSerializer,
     ClienteCreateSerializer,
     IndustriaSerializer,
-    AsignacionClienteUsuarioSerializer,
-    AsignarAnalistaSerializer,
-    AsignarSupervisorSerializer,
-    ClienteConAsignacionesSerializer,
-    CargaTrabajoSupervisorSerializer,
 )
 from shared.permissions import IsGerente, IsSupervisor
 
@@ -68,26 +64,30 @@ class ClienteViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
     
     def get_queryset(self):
-        """Filtra clientes según el rol del usuario."""
+        """
+        Filtra clientes según el rol del usuario.
+        - Gerente: todos los clientes
+        - Supervisor: clientes asignados a él + clientes asignados a sus analistas
+        - Analista: solo clientes asignados a él
+        """
         user = self.request.user
-        queryset = Cliente.objects.select_related('industria')
+        queryset = Cliente.objects.select_related('industria', 'usuario_asignado')
         
         # Gerentes ven todos los clientes
         if user.tipo_usuario == 'gerente':
             return queryset
         
-        # Supervisores ven clientes de sus analistas
+        # Supervisores ven:
+        # - Clientes asignados directamente a ellos
+        # - Clientes asignados a analistas que ellos supervisan
         if user.tipo_usuario == 'supervisor':
-            analistas_ids = user.analistas_supervisados.values_list('id', flat=True)
-            clientes_ids = AsignacionClienteUsuario.objects.filter(
-                usuario_id__in=analistas_ids,
-                activa=True
-            ).values_list('cliente_id', flat=True)
-            return queryset.filter(id__in=clientes_ids)
+            return queryset.filter(
+                Q(usuario_asignado=user) | 
+                Q(usuario_asignado__supervisor=user)
+            )
         
-        # Analistas y seniors ven solo sus clientes asignados
-        clientes_ids = user.asignaciones.filter(activa=True).values_list('cliente_id', flat=True)
-        return queryset.filter(id__in=clientes_ids)
+        # Analistas ven solo clientes asignados directamente a ellos
+        return queryset.filter(usuario_asignado=user)
     
     @action(detail=True, methods=['get'])
     def cierres(self, request, pk=None):
