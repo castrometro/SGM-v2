@@ -30,6 +30,9 @@ import IncidenciasPage from './features/incidencias/pages/IncidenciasPage'
 import UsuariosPage from './features/admin/pages/UsuariosPage'
 import AdminClientesPage from './features/admin/pages/AdminClientesPage'
 
+// Supervisor
+import { MiEquipoPage } from './features/supervisor'
+
 // ============================================================================
 // COMPONENTES DE PROTECCIÓN DE RUTAS
 // ============================================================================
@@ -122,7 +125,7 @@ function App() {
           path="equipo" 
           element={
             <SupervisorRoute>
-              <PlaceholderPage title="Mi Equipo" />
+              <MiEquipoPage />
             </SupervisorRoute>
           } 
         />

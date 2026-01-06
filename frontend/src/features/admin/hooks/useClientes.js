@@ -123,3 +123,42 @@ export const useToggleClienteActivo = () => {
     },
   })
 }
+
+// ============================================
+// Hooks para Issue #5: Vista de Supervisor
+// ============================================
+
+/**
+ * Hook para obtener clientes del equipo del supervisor
+ */
+export const useMiEquipo = () => {
+  return useQuery({
+    queryKey: ['mi-equipo'],
+    queryFn: async () => {
+      const { data } = await api.get('/v1/core/clientes/mi_equipo/')
+      return data
+    },
+  })
+}
+
+/**
+ * Hook para reasignar cliente a otro analista del equipo
+ */
+export const useReasignarCliente = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ clienteId, usuarioId }) => {
+      const { data } = await api.post(
+        `/v1/core/clientes/${clienteId}/reasignar/`,
+        { usuario_id: usuarioId }
+      )
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mi-equipo'] })
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] })
+      queryClient.invalidateQueries({ queryKey: ['clientes'] })
+    },
+  })
+}

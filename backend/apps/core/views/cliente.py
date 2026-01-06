@@ -232,3 +232,138 @@ class ClienteViewSet(viewsets.ModelViewSet):
                 }
         
         return Response(data)
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, IsSupervisor])
+    def mi_equipo(self, request):
+        """
+        Obtiene clientes agrupados por analista del equipo del supervisor.
+        Solo para supervisores y gerentes.
+        """
+        user = request.user
+        
+        # Obtener analistas del equipo
+        if user.tipo_usuario == 'gerente':
+            # Gerente ve todos los analistas
+            analistas = Usuario.objects.filter(
+                tipo_usuario='analista',
+                is_active=True
+            ).select_related('supervisor')
+        else:
+            # Supervisor ve solo sus analistas
+            analistas = user.analistas_supervisados.filter(is_active=True)
+        
+        # Construir respuesta con clientes por analista
+        resultado = []
+        for analista in analistas:
+            clientes_analista = Cliente.objects.filter(
+                usuario_asignado=analista,
+                activo=True
+            ).select_related('industria')
+            
+            resultado.append({
+                'analista': {
+                    'id': analista.id,
+                    'nombre': analista.get_full_name(),
+                    'email': analista.email,
+                },
+                'total_clientes': clientes_analista.count(),
+                'clientes': ClienteSerializer(clientes_analista, many=True).data
+            })
+        
+        # Agregar clientes asignados directamente al supervisor (si no es gerente)
+        if user.tipo_usuario == 'supervisor':
+            clientes_supervisor = Cliente.objects.filter(
+                usuario_asignado=user,
+                activo=True
+            ).select_related('industria')
+            
+            resultado.insert(0, {
+                'analista': {
+                    'id': user.id,
+                    'nombre': f"{user.get_full_name()} (Yo)",
+                    'email': user.email,
+                },
+                'total_clientes': clientes_supervisor.count(),
+                'clientes': ClienteSerializer(clientes_supervisor, many=True).data
+            })
+        
+        # Estadísticas generales
+        total_clientes = sum(item['total_clientes'] for item in resultado)
+        
+        return Response({
+            'equipo': resultado,
+            'estadisticas': {
+                'total_analistas': len(analistas),
+                'total_clientes': total_clientes,
+            }
+        })
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsSupervisor])
+    def reasignar(self, request, pk=None):
+        """
+        Reasigna un cliente a otro analista del equipo del supervisor.
+        El supervisor solo puede reasignar a analistas de su equipo.
+        """
+        cliente = self.get_object()
+        user = request.user
+        nuevo_usuario_id = request.data.get('usuario_id')
+        
+        if not nuevo_usuario_id:
+            return Response(
+                {'error': 'Debe especificar el usuario al que reasignar'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            nuevo_usuario = Usuario.objects.get(id=nuevo_usuario_id)
+        except Usuario.DoesNotExist:
+            return Response(
+                {'error': 'Usuario no encontrado'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Validar permisos
+        if user.tipo_usuario == 'gerente':
+            # Gerente puede reasignar a cualquier analista/supervisor
+            if nuevo_usuario.tipo_usuario not in ['analista', 'supervisor']:
+                return Response(
+                    {'error': 'Solo se puede asignar a analistas o supervisores'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            # Supervisor solo puede reasignar entre su equipo o a sí mismo
+            es_su_equipo = (
+                nuevo_usuario.id == user.id or
+                nuevo_usuario.supervisor_id == user.id
+            )
+            if not es_su_equipo:
+                return Response(
+                    {'error': 'Solo puede reasignar a analistas de su equipo'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        
+        if not nuevo_usuario.is_active:
+            return Response(
+                {'error': 'El usuario no está activo'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Guardar usuario anterior para log
+        usuario_anterior = cliente.usuario_asignado
+        
+        # Reasignar
+        cliente.usuario_asignado = nuevo_usuario
+        cliente.save()
+        
+        return Response({
+            'mensaje': f'Cliente reasignado a {nuevo_usuario.get_full_name()}',
+            'cliente': ClienteSerializer(cliente).data,
+            'usuario_anterior': {
+                'id': usuario_anterior.id,
+                'nombre': usuario_anterior.get_full_name(),
+            } if usuario_anterior else None,
+            'usuario_nuevo': {
+                'id': nuevo_usuario.id,
+                'nombre': nuevo_usuario.get_full_name(),
+            }
+        })
