@@ -1,13 +1,19 @@
 /**
  * Página de listado de clientes asignados
+ * Issue #9: Formato tabla con filtros (mismo estilo que Admin > Clientes)
  */
-import { Link } from 'react-router-dom'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Building2, Users, FileCheck2, RefreshCw } from 'lucide-react'
+import { Building2, Search, RefreshCw } from 'lucide-react'
 import api from '../../../api/axios'
-import { Card, CardContent, CardHeader, CardTitle, Button } from '../../../components/ui'
+import { Card, CardContent, CardHeader, CardTitle, Button, Select } from '../../../components/ui'
+import MisClientesTable from '../components/MisClientesTable'
 
 const ClientesPage = () => {
+  // Estado de filtros
+  const [search, setSearch] = useState('')
+  const [filterActivo, setFilterActivo] = useState('')
+
   const { 
     data: clientes = [], 
     isLoading, 
@@ -21,11 +27,41 @@ const ClientesPage = () => {
       const { data } = await api.get('/v1/core/clientes/')
       return data.results || data
     },
-    // Siempre refetch al montar el componente para evitar datos stale
     refetchOnMount: 'always',
-    // No considerar datos vacíos como cache válido
     staleTime: 0,
   })
+
+  // Filtrar clientes localmente
+  const clientesFiltrados = useMemo(() => {
+    return clientes.filter((cliente) => {
+      // Filtro de búsqueda
+      const searchLower = search.toLowerCase()
+      const matchSearch = !search || 
+        (cliente.nombre || '').toLowerCase().includes(searchLower) ||
+        (cliente.razon_social || '').toLowerCase().includes(searchLower) ||
+        (cliente.nombre_comercial || '').toLowerCase().includes(searchLower) ||
+        (cliente.rut || '').toLowerCase().includes(searchLower)
+
+      // Filtro de estado
+      const matchActivo = filterActivo === '' || 
+        cliente.activo === (filterActivo === 'true')
+
+      return matchSearch && matchActivo
+    })
+  }, [clientes, search, filterActivo])
+
+  // Opciones de filtro
+  const estadoOptions = [
+    { value: 'true', label: 'Activos' },
+    { value: 'false', label: 'Inactivos' },
+  ]
+
+  const hasFilters = search || filterActivo
+
+  const handleClearFilters = () => {
+    setSearch('')
+    setFilterActivo('')
+  }
 
   // Mostrar loading en la carga inicial
   if (isLoading) {
@@ -51,10 +87,13 @@ const ClientesPage = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-secondary-100">Mis Clientes</h1>
-          <p className="text-secondary-400 mt-1">Clientes asignados a tu usuario</p>
+          <p className="text-secondary-400 mt-1">
+            Clientes asignados a tu usuario ({clientes.length} total)
+          </p>
         </div>
         <Button 
           variant="ghost" 
@@ -66,51 +105,64 @@ const ClientesPage = () => {
         </Button>
       </div>
 
-      {clientes.length === 0 ? (
-        <Card>
-          <CardContent className="py-12">
-            <div className="flex flex-col items-center justify-center text-secondary-400">
-              <Building2 className="h-12 w-12 mb-4 opacity-50" />
-              <p className="text-lg font-medium">No hay clientes asignados</p>
-              <p className="text-sm">Contacta a tu supervisor para que te asigne clientes</p>
+      {/* Filtros */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            {/* Búsqueda */}
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-secondary-500" />
+              <input
+                type="text"
+                placeholder="Buscar por nombre, RUT o razón social..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-secondary-800 border border-secondary-700 rounded-lg text-secondary-100 placeholder-secondary-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              />
             </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {clientes.map((cliente) => (
-            <Link key={cliente.id} to={`/clientes/${cliente.id}`}>
-              <Card className="hover:border-primary-500/50 transition-colors cursor-pointer">
-                <CardContent className="p-6">
-                  <div className="flex items-start gap-4">
-                    <div className="p-3 rounded-lg bg-primary-600/20">
-                      <Building2 className="h-6 w-6 text-primary-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-secondary-100 truncate">
-                        {cliente.nombre}
-                      </h3>
-                      <p className="text-sm text-secondary-500 truncate">
-                        {cliente.rut || 'Sin RUT'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-4 flex items-center gap-4 text-sm text-secondary-400">
-                    <span className="flex items-center gap-1">
-                      <Users className="h-4 w-4" />
-                      {cliente.total_empleados || 0} empleados
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <FileCheck2 className="h-4 w-4" />
-                      {cliente.cierres_activos || 0} cierres
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-        </div>
-      )}
+
+            {/* Filtro Estado */}
+            <div className="w-full sm:w-48">
+              <Select
+                options={estadoOptions}
+                placeholder="Estado"
+                value={filterActivo}
+                onChange={(e) => setFilterActivo(e.target.value)}
+              />
+            </div>
+
+            {/* Limpiar filtros */}
+            {hasFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleClearFilters}
+                className="self-center"
+              >
+                Limpiar
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabla de Clientes */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Building2 className="h-5 w-5 text-primary-400" />
+            Lista de Clientes
+            {hasFilters && clientesFiltrados.length !== clientes.length && (
+              <span className="text-sm font-normal text-secondary-400 ml-2">
+                (mostrando {clientesFiltrados.length} de {clientes.length})
+              </span>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <MisClientesTable clientes={clientesFiltrados} />
+        </CardContent>
+      </Card>
     </div>
   )
 }

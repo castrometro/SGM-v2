@@ -27,7 +27,7 @@ const Sidebar = () => {
   const user = useAuthStore((state) => state.user)
   const { isSupervisorOrHigher, isGerente } = usePermissions()
   
-  // Navegación común para todos los roles
+  // Navegación común para todos los roles (excepto Mis Clientes para gerentes)
   const mainNavigation = [
     { 
       name: 'Dashboard', 
@@ -41,12 +41,13 @@ const Sidebar = () => {
       icon: FileCheck2,
       description: 'Procesos de validación'
     },
-    { 
+    // "Mis Clientes" solo para analistas y supervisores (gerentes usan Admin > Clientes)
+    ...(!isGerente ? [{ 
       name: 'Mis Clientes', 
       href: '/clientes', 
       icon: Building2,
       description: 'Clientes asignados'
-    },
+    }] : []),
   ]
   
   // Navegación para supervisores
