@@ -69,7 +69,12 @@ const NuevoCierrePage = () => {
       toast.error('Selecciona un cliente')
       return
     }
-    createCierre.mutate(formData)
+    // Formatear período como YYYY-MM (formato esperado por el backend)
+    const periodo = `${formData.anio}-${String(formData.mes).padStart(2, '0')}`
+    createCierre.mutate({
+      cliente: formData.cliente,
+      periodo,
+    })
   }
 
   // Años disponibles (actual y anterior)
