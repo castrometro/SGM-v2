@@ -3,19 +3,31 @@
  */
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Building2, Users, FileCheck2 } from 'lucide-react'
+import { Building2, Users, FileCheck2, RefreshCw } from 'lucide-react'
 import api from '../../../api/axios'
-import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui'
+import { Card, CardContent, CardHeader, CardTitle, Button } from '../../../components/ui'
 
 const ClientesPage = () => {
-  const { data: clientes = [], isLoading } = useQuery({
+  const { 
+    data: clientes = [], 
+    isLoading, 
+    isFetching,
+    refetch,
+    isError,
+    error 
+  } = useQuery({
     queryKey: ['mis-clientes'],
     queryFn: async () => {
       const { data } = await api.get('/v1/core/clientes/')
       return data.results || data
     },
+    // Siempre refetch al montar el componente para evitar datos stale
+    refetchOnMount: 'always',
+    // No considerar datos vacíos como cache válido
+    staleTime: 0,
   })
 
+  // Mostrar loading en la carga inicial
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -24,11 +36,34 @@ const ClientesPage = () => {
     )
   }
 
+  // Mostrar error si falla la carga
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-secondary-400">
+        <p className="text-red-400 mb-4">Error al cargar clientes: {error?.message}</p>
+        <Button onClick={() => refetch()} variant="outline" size="sm">
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Reintentar
+        </Button>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-secondary-100">Mis Clientes</h1>
-        <p className="text-secondary-400 mt-1">Clientes asignados a tu usuario</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-secondary-100">Mis Clientes</h1>
+          <p className="text-secondary-400 mt-1">Clientes asignados a tu usuario</p>
+        </div>
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={() => refetch()}
+          disabled={isFetching}
+        >
+          <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+        </Button>
       </div>
 
       {clientes.length === 0 ? (
