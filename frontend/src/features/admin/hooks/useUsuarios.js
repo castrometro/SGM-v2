@@ -80,9 +80,9 @@ export const useUpdateUsuario = () => {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ id, ...usuarioData }) => {
-      const { data } = await api.put(`/v1/core/usuarios/${id}/`, usuarioData)
-      return data
+    mutationFn: async ({ id, data }) => {
+      const { data: responseData } = await api.put(`/v1/core/usuarios/${id}/`, data)
+      return responseData
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [QUERY_KEY] })
@@ -110,14 +110,18 @@ export const useToggleUsuarioActivo = () => {
 
 /**
  * Hook para reset password
+ * Si no se proporciona contraseña, el backend genera una automáticamente
  */
 export const useResetPassword = () => {
   return useMutation({
-    mutationFn: async ({ id, new_password, confirm_password }) => {
-      const { data } = await api.post(`/v1/core/usuarios/${id}/reset_password/`, {
-        new_password,
-        confirm_password,
-      })
+    mutationFn: async (idOrParams) => {
+      // Soporta tanto solo ID (genera automática) como objeto con contraseña manual
+      const id = typeof idOrParams === 'object' ? idOrParams.id : idOrParams
+      const body = typeof idOrParams === 'object' && idOrParams.new_password 
+        ? { new_password: idOrParams.new_password, confirm_password: idOrParams.confirm_password }
+        : {}
+      
+      const { data } = await api.post(`/v1/core/usuarios/${id}/reset_password/`, body)
       return data
     },
   })

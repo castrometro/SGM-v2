@@ -117,17 +117,39 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsGerente])
     def reset_password(self, request, pk=None):
-        """Resetea la contraseña de un usuario (solo gerentes)."""
-        usuario = self.get_object()
-        serializer = ResetPasswordSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        """
+        Resetea la contraseña de un usuario (solo gerentes).
+        Si no se proporciona contraseña, genera una automáticamente.
+        """
+        import secrets
+        import string
         
-        usuario.set_password(serializer.validated_data['new_password'])
+        usuario = self.get_object()
+        
+        # Si se proporciona contraseña manual, validarla
+        if request.data.get('new_password'):
+            serializer = ResetPasswordSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            new_password = serializer.validated_data['new_password']
+            show_password = False
+        else:
+            # Generar contraseña automática segura (12 caracteres)
+            alphabet = string.ascii_letters + string.digits + "!@#$%"
+            new_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+            show_password = True
+        
+        usuario.set_password(new_password)
         usuario.save()
         
-        return Response({
-            'message': f'Contraseña de {usuario.get_full_name()} actualizada correctamente.'
-        })
+        response_data = {
+            'message': f'Contraseña de {usuario.get_full_name()} actualizada correctamente.',
+        }
+        
+        # Solo devolver la contraseña si fue generada automáticamente
+        if show_password:
+            response_data['new_password'] = new_password
+        
+        return Response(response_data)
     
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsGerente])
     def toggle_active(self, request, pk=None):

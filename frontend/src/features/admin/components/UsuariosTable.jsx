@@ -72,21 +72,21 @@ const UsuariosTable = ({
     const configs = {
       delete: {
         title: 'Eliminar Usuario',
-        message: `¿Está seguro de eliminar al usuario "${usuario.nombre} ${usuario.apellido}"? Esta acción no se puede deshacer.`,
+        description: `¿Está seguro de eliminar al usuario "${usuario.nombre} ${usuario.apellido}"? Esta acción no se puede deshacer.`,
         variant: 'danger',
         confirmText: 'Eliminar',
       },
       toggleActive: {
         title: usuario.is_active ? 'Desactivar Usuario' : 'Activar Usuario',
-        message: usuario.is_active 
+        description: usuario.is_active 
           ? `¿Desea desactivar al usuario "${usuario.nombre} ${usuario.apellido}"? No podrá acceder al sistema.`
           : `¿Desea activar al usuario "${usuario.nombre} ${usuario.apellido}"?`,
-        variant: usuario.is_active ? 'warning' : 'info',
+        variant: usuario.is_active ? 'warning' : 'default',
         confirmText: usuario.is_active ? 'Desactivar' : 'Activar',
       },
       resetPassword: {
         title: 'Resetear Contraseña',
-        message: `¿Desea resetear la contraseña de "${usuario.nombre} ${usuario.apellido}"? Se generará una nueva contraseña temporal.`,
+        description: `¿Desea resetear la contraseña de "${usuario.nombre} ${usuario.apellido}"? Se generará una nueva contraseña temporal.`,
         variant: 'warning',
         confirmText: 'Resetear',
       },
@@ -271,7 +271,7 @@ const UsuariosTable = ({
       </Table>
       
       <ConfirmDialog
-        open={confirmDialog.open}
+        isOpen={confirmDialog.open}
         onClose={() => setConfirmDialog({ open: false, type: null, usuario: null })}
         onConfirm={handleConfirm}
         {...getConfirmDialogProps()}

@@ -43,7 +43,7 @@ const UsuariosPage = () => {
   const [analistaAsignar, setAnalistaAsignar] = useState(null)
 
   // Data hooks
-  const { data: usuarios = [], isLoading } = useUsuarios()
+  const { data: usuarios = [], isLoading, refetch, isRefetching } = useUsuarios()
   const { data: supervisores = [] } = useSupervisores()
   
   // Mutation hooks
@@ -327,9 +327,10 @@ const UsuariosPage = () => {
               <Button 
                 variant="ghost" 
                 size="sm"
-                onClick={() => window.location.reload()}
+                onClick={() => refetch()}
+                disabled={isRefetching}
               >
-                <RefreshCw className="h-4 w-4" />
+                <RefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
               </Button>
             </div>
           </div>
@@ -361,7 +362,7 @@ const UsuariosPage = () => {
 
       {/* Modal de crear/editar */}
       <Modal
-        open={modalOpen}
+        isOpen={modalOpen}
         onClose={handleCloseModal}
         title={usuarioEditar ? 'Editar Usuario' : 'Nuevo Usuario'}
         size="lg"
