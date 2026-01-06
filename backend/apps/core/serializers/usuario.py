@@ -106,18 +106,17 @@ class UsuarioMeSerializer(serializers.ModelSerializer):
         if obj.tipo_usuario == 'gerente':
             return []  # Gerentes ven todos
         
-        from apps.core.models import AsignacionClienteUsuario
+        from apps.core.models import Cliente
+        from django.db.models import Q
         
         if obj.tipo_usuario == 'supervisor':
-            # Obtener clientes de analistas supervisados
-            analistas_ids = obj.analistas_supervisados.values_list('id', flat=True)
-            return list(AsignacionClienteUsuario.objects.filter(
-                usuario_id__in=analistas_ids,
-                activa=True
-            ).values_list('cliente_id', flat=True).distinct())
+            # Clientes asignados directamente + clientes de analistas supervisados
+            return list(Cliente.objects.filter(
+                Q(usuario_asignado=obj) | Q(usuario_asignado__supervisor=obj)
+            ).values_list('id', flat=True).distinct())
         
-        # Analistas y seniors: sus clientes directos
-        return list(obj.asignaciones.filter(activa=True).values_list('cliente_id', flat=True))
+        # Analistas: solo sus clientes directos
+        return list(Cliente.objects.filter(usuario_asignado=obj).values_list('id', flat=True))
 
 
 class UsuarioUpdateSerializer(serializers.ModelSerializer):
