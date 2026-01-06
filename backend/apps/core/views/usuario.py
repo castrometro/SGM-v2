@@ -150,6 +150,152 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             'is_active': usuario.is_active
         })
 
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsGerente])
+    def asignar_supervisor(self, request, pk=None):
+        """
+        Asigna un supervisor a un analista.
+        POST /api/v1/core/usuarios/{id}/asignar_supervisor/
+        Body: { "supervisor_id": 123 } o { "supervisor_id": null }
+        """
+        analista = self.get_object()
+        
+        # Validar que sea un analista
+        if analista.tipo_usuario != 'analista':
+            return Response(
+                {'error': 'Solo se puede asignar supervisor a usuarios de tipo analista.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        supervisor_id = request.data.get('supervisor_id')
+        
+        if supervisor_id is None:
+            # Desasignar supervisor
+            analista.supervisor = None
+            analista.save()
+            return Response({
+                'message': f'Supervisor desasignado de {analista.get_full_name()}.',
+                'analista': UsuarioSerializer(analista).data
+            })
+        
+        # Validar que el supervisor exista y sea supervisor/gerente
+        try:
+            supervisor = Usuario.objects.get(pk=supervisor_id)
+        except Usuario.DoesNotExist:
+            return Response(
+                {'error': 'Supervisor no encontrado.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if supervisor.tipo_usuario not in ['supervisor', 'gerente']:
+            return Response(
+                {'error': 'El usuario seleccionado no es supervisor ni gerente.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not supervisor.is_active:
+            return Response(
+                {'error': 'El supervisor seleccionado no está activo.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        analista.supervisor = supervisor
+        analista.save()
+        
+        return Response({
+            'message': f'{analista.get_full_name()} asignado a {supervisor.get_full_name()}.',
+            'analista': UsuarioSerializer(analista).data
+        })
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, IsGerente])
+    def sin_supervisor(self, request):
+        """
+        Lista analistas sin supervisor asignado.
+        GET /api/v1/core/usuarios/sin_supervisor/
+        """
+        analistas = Usuario.objects.filter(
+            tipo_usuario='analista',
+            supervisor__isnull=True,
+            is_active=True
+        ).select_related('supervisor')
+        
+        serializer = UsuarioSerializer(analistas, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, IsGerente])
+    def carga_supervisores(self, request):
+        """
+        Muestra cantidad de analistas por supervisor.
+        GET /api/v1/core/usuarios/carga_supervisores/
+        """
+        from django.db.models import Count
+        
+        supervisores = Usuario.objects.filter(
+            tipo_usuario__in=['supervisor', 'gerente'],
+            is_active=True
+        ).annotate(
+            total_analistas=Count('analistas_supervisados', filter=models.Q(analistas_supervisados__is_active=True))
+        ).order_by('-total_analistas')
+        
+        data = [{
+            'id': s.id,
+            'nombre': s.get_full_name(),
+            'email': s.email,
+            'tipo_usuario': s.tipo_usuario,
+            'total_analistas': s.total_analistas,
+            'analistas': [
+                {'id': a.id, 'nombre': a.get_full_name(), 'email': a.email}
+                for a in s.analistas_supervisados.filter(is_active=True)
+            ]
+        } for s in supervisores]
+        
+        return Response(data)
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsGerente])
+    def reasignacion_masiva(self, request):
+        """
+        Reasigna múltiples analistas a un nuevo supervisor.
+        POST /api/v1/core/usuarios/reasignacion_masiva/
+        Body: { "analista_ids": [1, 2, 3], "supervisor_id": 5 }
+        """
+        analista_ids = request.data.get('analista_ids', [])
+        supervisor_id = request.data.get('supervisor_id')
+        
+        if not analista_ids:
+            return Response(
+                {'error': 'Debe proporcionar al menos un analista.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validar supervisor
+        supervisor = None
+        if supervisor_id is not None:
+            try:
+                supervisor = Usuario.objects.get(pk=supervisor_id)
+                if supervisor.tipo_usuario not in ['supervisor', 'gerente']:
+                    return Response(
+                        {'error': 'El usuario seleccionado no es supervisor ni gerente.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except Usuario.DoesNotExist:
+                return Response(
+                    {'error': 'Supervisor no encontrado.'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        
+        # Actualizar analistas
+        updated = Usuario.objects.filter(
+            id__in=analista_ids,
+            tipo_usuario='analista'
+        ).update(supervisor=supervisor)
+        
+        mensaje = f'{updated} analista(s) reasignado(s)'
+        if supervisor:
+            mensaje += f' a {supervisor.get_full_name()}'
+        else:
+            mensaje += ' (supervisor removido)'
+        
+        return Response({'message': mensaje, 'updated': updated})
+
 
 class MeView(APIView):
     """

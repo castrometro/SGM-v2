@@ -12,7 +12,8 @@ import {
   Shield,
   Users,
   Briefcase,
-  Loader2
+  Loader2,
+  UserCog
 } from 'lucide-react'
 import Table from '../../../components/ui/Table'
 import Badge from '../../../components/ui/Badge'
@@ -32,6 +33,7 @@ const UsuariosTable = ({
   onToggleActive,
   onResetPassword,
   onDelete,
+  onAsignarSupervisor,
   currentUserId,
 }) => {
   const [confirmDialog, setConfirmDialog] = useState({
@@ -160,11 +162,21 @@ const UsuariosTable = ({
                     {usuario.tipo_usuario !== 'analista' ? (
                       <span className="text-secondary-500">-</span>
                     ) : usuario.supervisor_info ? (
-                      <span className="text-secondary-300">
+                      <button 
+                        onClick={() => onAsignarSupervisor?.(usuario)}
+                        className="text-secondary-300 hover:text-primary-400 transition-colors underline-offset-2 hover:underline"
+                        title="Cambiar supervisor"
+                      >
                         {usuario.supervisor_info.nombre} {usuario.supervisor_info.apellido}
-                      </span>
+                      </button>
                     ) : (
-                      <span className="text-secondary-500 italic">Sin asignar</span>
+                      <button 
+                        onClick={() => onAsignarSupervisor?.(usuario)}
+                        className="text-amber-500 hover:text-amber-400 transition-colors italic"
+                        title="Asignar supervisor"
+                      >
+                        Sin asignar
+                      </button>
                     )}
                   </Table.Cell>
 
@@ -198,6 +210,17 @@ const UsuariosTable = ({
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
+                      
+                      {/* Botón asignar supervisor - solo para analistas */}
+                      {usuario.tipo_usuario === 'analista' && (
+                        <button
+                          onClick={() => onAsignarSupervisor?.(usuario)}
+                          className="p-2 rounded-lg text-secondary-400 hover:text-primary-400 hover:bg-primary-500/10 transition-colors"
+                          title="Asignar supervisor"
+                        >
+                          <UserCog className="w-4 h-4" />
+                        </button>
+                      )}
                       
                       <button
                         onClick={() => handleAction('toggleActive', usuario)}

@@ -139,3 +139,79 @@ export const useDeleteUsuario = () => {
     },
   })
 }
+
+// ============================================
+// Hooks para Issue #4: Asignación de Supervisores
+// ============================================
+
+/**
+ * Hook para asignar supervisor a un analista
+ */
+export const useAsignarSupervisor = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ analistaId, supervisorId }) => {
+      const { data } = await api.post(
+        `/v1/core/usuarios/${analistaId}/asignar_supervisor/`,
+        { supervisor_id: supervisorId }
+      )
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] })
+      queryClient.invalidateQueries({ queryKey: ['supervisores'] })
+      queryClient.invalidateQueries({ queryKey: ['carga-supervisores'] })
+      queryClient.invalidateQueries({ queryKey: ['analistas-sin-supervisor'] })
+    },
+  })
+}
+
+/**
+ * Hook para obtener analistas sin supervisor
+ */
+export const useAnalistasSinSupervisor = () => {
+  return useQuery({
+    queryKey: ['analistas-sin-supervisor'],
+    queryFn: async () => {
+      const { data } = await api.get('/v1/core/usuarios/sin_supervisor/')
+      return data.results || data
+    },
+  })
+}
+
+/**
+ * Hook para obtener carga de trabajo de supervisores
+ */
+export const useCargaSupervisores = () => {
+  return useQuery({
+    queryKey: ['carga-supervisores'],
+    queryFn: async () => {
+      const { data } = await api.get('/v1/core/usuarios/carga_supervisores/')
+      return data.results || data
+    },
+  })
+}
+
+/**
+ * Hook para reasignación masiva de analistas
+ */
+export const useReasignacionMasiva = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ analistaIds, supervisorId }) => {
+      const { data } = await api.post('/v1/core/usuarios/reasignacion_masiva/', {
+        analista_ids: analistaIds,
+        supervisor_id: supervisorId,
+      })
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] })
+      queryClient.invalidateQueries({ queryKey: ['supervisores'] })
+      queryClient.invalidateQueries({ queryKey: ['carga-supervisores'] })
+      queryClient.invalidateQueries({ queryKey: ['analistas-sin-supervisor'] })
+    },
+  })
+}

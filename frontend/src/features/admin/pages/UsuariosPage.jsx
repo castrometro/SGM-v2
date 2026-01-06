@@ -27,7 +27,7 @@ import {
   useDeleteUsuario,
   useSupervisores 
 } from '../hooks'
-import { UsuarioForm, UsuariosTable } from '../components'
+import { UsuarioForm, UsuariosTable, AsignacionSupervisorModal } from '../components'
 import toast from 'react-hot-toast'
 
 const UsuariosPage = () => {
@@ -39,6 +39,8 @@ const UsuariosPage = () => {
   // Modal states
   const [modalOpen, setModalOpen] = useState(false)
   const [usuarioEditar, setUsuarioEditar] = useState(null)
+  const [supervisorModalOpen, setSupervisorModalOpen] = useState(false)
+  const [analistaAsignar, setAnalistaAsignar] = useState(null)
 
   // Data hooks
   const { data: usuarios = [], isLoading } = useUsuarios()
@@ -98,6 +100,16 @@ const UsuariosPage = () => {
   const handleCloseModal = () => {
     setModalOpen(false)
     setUsuarioEditar(null)
+  }
+
+  const handleAsignarSupervisor = (analista) => {
+    setAnalistaAsignar(analista)
+    setSupervisorModalOpen(true)
+  }
+
+  const handleCloseSupervisorModal = () => {
+    setSupervisorModalOpen(false)
+    setAnalistaAsignar(null)
   }
 
   const handleSubmit = async (data) => {
@@ -334,6 +346,7 @@ const UsuariosPage = () => {
             onToggleActive={handleToggleActive}
             onResetPassword={handleResetPassword}
             onDelete={handleDelete}
+            onAsignarSupervisor={handleAsignarSupervisor}
             currentUserId={currentUser?.id}
           />
         </CardContent>
@@ -361,6 +374,13 @@ const UsuariosPage = () => {
           isLoading={createUsuario.isPending || updateUsuario.isPending}
         />
       </Modal>
+
+      {/* Modal de asignación de supervisor */}
+      <AsignacionSupervisorModal
+        isOpen={supervisorModalOpen}
+        onClose={handleCloseSupervisorModal}
+        analista={analistaAsignar}
+      />
     </div>
   )
 }
