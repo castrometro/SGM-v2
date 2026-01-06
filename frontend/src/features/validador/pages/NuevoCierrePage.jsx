@@ -120,7 +120,7 @@ const NuevoCierrePage = () => {
                   <option value="">Selecciona un cliente</option>
                   {clientes.map((cliente) => (
                     <option key={cliente.id} value={cliente.id}>
-                      {cliente.nombre}
+                      {cliente.nombre_display || cliente.razon_social}
                     </option>
                   ))}
                 </select>
