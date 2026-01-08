@@ -123,10 +123,19 @@ SGM-v2/
 │       ├── utils/               # Utilidades
 │       └── styles/              # Estilos globales
 │
-└── docs/                        # Documentación
-    ├── API.md
-    ├── DEPLOYMENT.md
-    └── ARCHITECTURE.md
+├── docs/                        # 📚 Documentación técnica
+│   ├── README.md                # Índice de documentación
+│   ├── backend/                 # Docs del backend
+│   │   ├── README.md
+│   │   └── SERVICE_LAYER.md     # Patrón Service Layer
+│   └── frontend/                # Docs del frontend
+│       ├── README.md
+│       ├── ERROR_BOUNDARY.md    # Manejo de errores
+│       └── CODE_SPLITTING.md    # Optimización de carga
+│
+└── .github/                     # Configuración de GitHub
+    ├── copilot-instructions.md  # Instrucciones para Copilot
+    └── react-instructions.md    # Estándares React
 ```
 
 ## 🚀 Quick Start
@@ -282,6 +291,14 @@ Generación de informes y dashboards:
 - **Dashboards**: Visualización de KPIs
 - **Informes**: Generación de reportes
 - **Exportaciones**: Excel, PDF
+
+## 📝 Documentación
+
+- **[Documentación Técnica](./docs/)** - Arquitectura, patrones y guías
+  - [Backend](./docs/backend/) - Service Layer, patterns
+  - [Frontend](./docs/frontend/) - Error Boundary, Code Splitting
+- **[Instrucciones para Copilot](./.github/copilot-instructions.md)** - Convenciones del proyecto
+- **[Estándares React](./.github/react-instructions.md)** - Best practices frontend
 
 ## 📝 Licencia
 

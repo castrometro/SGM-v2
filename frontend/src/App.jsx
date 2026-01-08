@@ -1,37 +1,59 @@
 /**
  * App principal con rutas protegidas por rol
+ * Implementa code splitting con React.lazy para optimizar la carga inicial
  */
+import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
 import { usePermissions } from './hooks/usePermissions'
 
-// Layouts
+// Error Boundary
+import ErrorBoundary from './components/ErrorBoundary'
+
+// Suspense Fallback
+import SuspenseFallback from './components/SuspenseFallback'
+
+// ============================================================================
+// EAGER IMPORTS (carga inmediata)
+// ============================================================================
+// Estos componentes se cargan inmediatamente porque son críticos para la app
+
+// Layouts - necesario para la estructura inicial
 import MainLayout from './components/layout/MainLayout'
 
-// Auth
+// Auth - crítico para el acceso
 import LoginPage from './features/auth/pages/LoginPage'
 
+// ============================================================================
+// LAZY IMPORTS (carga bajo demanda)
+// ============================================================================
+// Estos componentes se cargan solo cuando el usuario navega a ellos
+
 // Dashboard
-import DashboardPage from './features/dashboard/pages/DashboardPage'
+const DashboardPage = lazy(() => import('./features/dashboard/pages/DashboardPage'))
 
 // Validador
-import ValidadorListPage from './features/validador/pages/ValidadorListPage'
-import CierreDetailPage from './features/validador/pages/CierreDetailPage'
-import NuevoCierrePage from './features/validador/pages/NuevoCierrePage'
+const ValidadorListPage = lazy(() => import('./features/validador/pages/ValidadorListPage'))
+const CierreDetailPage = lazy(() => import('./features/validador/pages/CierreDetailPage'))
+const NuevoCierrePage = lazy(() => import('./features/validador/pages/NuevoCierrePage'))
 
-// Clientes  
-import ClientesPage from './features/clientes/pages/ClientesPage'
-import ClienteDetailPage from './features/clientes/pages/ClienteDetailPage'
+// Clientes
+const ClientesPage = lazy(() => import('./features/clientes/pages/ClientesPage'))
+const ClienteDetailPage = lazy(() => import('./features/clientes/pages/ClienteDetailPage'))
 
 // Incidencias (supervisor+)
-import IncidenciasPage from './features/incidencias/pages/IncidenciasPage'
-
-// Admin (solo gerente)
-import UsuariosPage from './features/admin/pages/UsuariosPage'
-import AdminClientesPage from './features/admin/pages/AdminClientesPage'
+const IncidenciasPage = lazy(() => import('./features/incidencias/pages/IncidenciasPage'))
 
 // Supervisor
-import { MiEquipoPage, CierresEquipoPage } from './features/supervisor'
+const MiEquipoPage = lazy(() => import('./features/supervisor/pages/MiEquipoPage'))
+const CierresEquipoPage = lazy(() => import('./features/supervisor/pages/CierresEquipoPage'))
+
+// Admin (gerente)
+const UsuariosPage = lazy(() => import('./features/admin/pages/UsuariosPage'))
+const AdminClientesPage = lazy(() => import('./features/admin/pages/AdminClientesPage'))
+
+// Error Test (solo desarrollo)
+const ErrorTestPage = lazy(() => import('./components/ErrorTestPage'))
 
 // ============================================================================
 // COMPONENTES DE PROTECCIÓN DE RUTAS
@@ -44,6 +66,16 @@ const LoadingSpinner = () => (
       <p className="text-secondary-400 text-sm">Cargando...</p>
     </div>
   </div>
+)
+
+/**
+ * Wrapper para componentes lazy con Suspense
+ * Muestra un fallback mientras el componente se carga
+ */
+const LazyRoute = ({ children }) => (
+  <Suspense fallback={<SuspenseFallback />}>
+    {children}
+  </Suspense>
 )
 
 const ProtectedRoute = ({ children }) => {
@@ -92,9 +124,10 @@ const PlaceholderPage = ({ title }) => (
 
 function App() {
   return (
-    <Routes>
-      {/* ===================== RUTAS PÚBLICAS ===================== */}
-      <Route path="/login" element={<LoginPage />} />
+    <ErrorBoundary>
+      <Routes>
+        {/* ===================== RUTAS PÚBLICAS ===================== */}
+        <Route path="/login" element={<LoginPage />} />
       
       {/* ===================== RUTAS PROTEGIDAS ===================== */}
       <Route
@@ -109,23 +142,28 @@ function App() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         
         {/* =================== RUTAS COMUNES (todos los roles) =================== */}
-        <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="dashboard" element={<LazyRoute><DashboardPage /></LazyRoute>} />
+        
+        {/* Test Error Boundary (solo desarrollo) */}
+        {import.meta.env.DEV && (
+          <Route path="test-error" element={<LazyRoute><ErrorTestPage /></LazyRoute>} />
+        )}
         
         {/* Validador / Mis Cierres */}
-        <Route path="validador" element={<ValidadorListPage />} />
-        <Route path="validador/nuevo" element={<NuevoCierrePage />} />
-        <Route path="validador/cierre/:id" element={<CierreDetailPage />} />
+        <Route path="validador" element={<LazyRoute><ValidadorListPage /></LazyRoute>} />
+        <Route path="validador/nuevo" element={<LazyRoute><NuevoCierrePage /></LazyRoute>} />
+        <Route path="validador/cierre/:id" element={<LazyRoute><CierreDetailPage /></LazyRoute>} />
         
         {/* Mis Clientes */}
-        <Route path="clientes" element={<ClientesPage />} />
-        <Route path="clientes/:id" element={<ClienteDetailPage />} />
+        <Route path="clientes" element={<LazyRoute><ClientesPage /></LazyRoute>} />
+        <Route path="clientes/:id" element={<LazyRoute><ClienteDetailPage /></LazyRoute>} />
         
         {/* =================== RUTAS SUPERVISOR+ =================== */}
         <Route 
           path="equipo" 
           element={
             <SupervisorRoute>
-              <MiEquipoPage />
+              <LazyRoute><MiEquipoPage /></LazyRoute>
             </SupervisorRoute>
           } 
         />
@@ -133,7 +171,7 @@ function App() {
           path="equipo/cierres" 
           element={
             <SupervisorRoute>
-              <CierresEquipoPage />
+              <LazyRoute><CierresEquipoPage /></LazyRoute>
             </SupervisorRoute>
           } 
         />
@@ -149,7 +187,7 @@ function App() {
           path="incidencias" 
           element={
             <SupervisorRoute>
-              <IncidenciasPage />
+              <LazyRoute><IncidenciasPage /></LazyRoute>
             </SupervisorRoute>
           } 
         />
@@ -185,7 +223,7 @@ function App() {
           path="admin/usuarios" 
           element={
             <GerenteRoute>
-              <UsuariosPage />
+              <LazyRoute><UsuariosPage /></LazyRoute>
             </GerenteRoute>
           } 
         />
@@ -193,7 +231,7 @@ function App() {
           path="admin/clientes" 
           element={
             <GerenteRoute>
-              <AdminClientesPage />
+              <LazyRoute><AdminClientesPage /></LazyRoute>
             </GerenteRoute>
           } 
         />
@@ -210,6 +248,7 @@ function App() {
       {/* ===================== 404 ===================== */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </ErrorBoundary>
   )
 }
 
