@@ -41,6 +41,11 @@ const NuevoCierrePage = lazy(() => import('./features/validador/pages/NuevoCierr
 const ClientesPage = lazy(() => import('./features/clientes/pages/ClientesPage'))
 const ClienteDetailPage = lazy(() => import('./features/clientes/pages/ClienteDetailPage'))
 
+// Dashboards de Nómina (post-validación)
+const DashboardHubPage = lazy(() => import('./features/validador/dashboards/pages/DashboardHubPage'))
+const LibroDashboardPage = lazy(() => import('./features/validador/dashboards/pages/LibroDashboardPage'))
+const MovimientosDashboardPage = lazy(() => import('./features/validador/dashboards/pages/MovimientosDashboardPage'))
+
 // Incidencias (supervisor+)
 const IncidenciasPage = lazy(() => import('./features/incidencias/pages/IncidenciasPage'))
 
@@ -157,6 +162,11 @@ function App() {
         {/* Mis Clientes */}
         <Route path="clientes" element={<LazyRoute><ClientesPage /></LazyRoute>} />
         <Route path="clientes/:id" element={<LazyRoute><ClienteDetailPage /></LazyRoute>} />
+        
+        {/* Dashboards de Nómina (post-validación) */}
+        <Route path="validador/cliente/:clienteId/dashboard" element={<LazyRoute><DashboardHubPage /></LazyRoute>} />
+        <Route path="validador/cliente/:clienteId/dashboard/libro" element={<LazyRoute><LibroDashboardPage /></LazyRoute>} />
+        <Route path="validador/cliente/:clienteId/dashboard/movimientos" element={<LazyRoute><MovimientosDashboardPage /></LazyRoute>} />
         
         {/* =================== RUTAS SUPERVISOR+ =================== */}
         <Route 
