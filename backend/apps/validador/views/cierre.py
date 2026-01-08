@@ -36,7 +36,9 @@ class CierreViewSet(viewsets.ModelViewSet):
         ).all()
         
         # Filtrar según tipo de usuario
-        if user.tipo_usuario == 'analista':
+        # Todos ven SOLO sus cierres directos (donde son el analista asignado)
+        # Para ver cierres del equipo, usar acción específica cierres_equipo
+        if user.tipo_usuario in ['analista', 'supervisor']:
             queryset = queryset.filter(analista=user)
         elif user.tipo_usuario == 'senior':
             # Senior ve sus cierres y los de su equipo
@@ -44,7 +46,7 @@ class CierreViewSet(viewsets.ModelViewSet):
                 Q(analista=user) | 
                 Q(analista__in=user.supervisados.all())
             )
-        # supervisor y gerente ven todo
+        # gerente ve todo
         
         # Filtros opcionales
         cliente_id = self.request.query_params.get('cliente')
@@ -203,4 +205,94 @@ class CierreViewSet(viewsets.ModelViewSet):
         return Response({
             'message': 'Cierre finalizado exitosamente',
             'cierre': CierreDetailSerializer(cierre).data
+        })
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, IsSupervisor])
+    def cierres_equipo(self, request):
+        """
+        Obtiene el cierre más reciente por cliente de los analistas supervisados.
+        Solo para supervisores y gerentes.
+        
+        Retorna:
+        - Lista de cierres agrupados por analista
+        - Solo el cierre más reciente de cada cliente
+        """
+        from django.db.models import Max, Subquery, OuterRef
+        from apps.core.models import Usuario, Cliente
+        
+        user = request.user
+        
+        # Obtener analistas del equipo
+        if user.tipo_usuario == 'gerente':
+            # Gerente ve todos los analistas
+            analistas = Usuario.objects.filter(
+                tipo_usuario='analista',
+                is_active=True
+            )
+        else:
+            # Supervisor ve solo sus analistas
+            analistas = user.analistas_supervisados.filter(is_active=True)
+        
+        # Para cada analista, obtener el cierre más reciente de cada cliente
+        resultado = []
+        
+        for analista in analistas:
+            # Obtener clientes del analista
+            clientes_analista = Cliente.objects.filter(
+                usuario_asignado=analista,
+                activo=True
+            )
+            
+            cierres_recientes = []
+            for cliente in clientes_analista:
+                # Obtener cierre más reciente de este cliente
+                cierre = Cierre.objects.filter(
+                    cliente=cliente,
+                    analista=analista
+                ).order_by('-periodo', '-fecha_creacion').first()
+                
+                if cierre:
+                    cierres_recientes.append({
+                        'id': cierre.id,
+                        'cliente': {
+                            'id': cliente.id,
+                            'nombre': cliente.nombre_comercial or cliente.razon_social,
+                            'rut': cliente.rut,
+                        },
+                        'periodo': cierre.periodo,
+                        'mes': cierre.mes,
+                        'anio': cierre.anio,
+                        'estado': cierre.estado,
+                        'estado_display': cierre.get_estado_display(),
+                        'fecha_creacion': cierre.fecha_creacion,
+                        'fecha_actualizacion': cierre.fecha_actualizacion,
+                    })
+            
+            if cierres_recientes or clientes_analista.exists():
+                resultado.append({
+                    'analista': {
+                        'id': analista.id,
+                        'nombre': analista.get_full_name(),
+                        'email': analista.email,
+                    },
+                    'total_clientes': clientes_analista.count(),
+                    'total_cierres': len(cierres_recientes),
+                    'cierres': cierres_recientes
+                })
+        
+        # Estadísticas generales
+        total_cierres = sum(item['total_cierres'] for item in resultado)
+        cierres_en_proceso = sum(
+            1 for item in resultado 
+            for c in item['cierres'] 
+            if c['estado'] not in ['completado', 'finalizado', 'rechazado']
+        )
+        
+        return Response({
+            'equipo': resultado,
+            'estadisticas': {
+                'total_analistas': len(resultado),
+                'total_cierres': total_cierres,
+                'cierres_en_proceso': cierres_en_proceso,
+            }
         })
