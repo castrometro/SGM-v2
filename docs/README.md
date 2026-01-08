@@ -43,7 +43,8 @@ SGM-v2/
 
 ### Para la IA (GitHub Copilot)
 - [Copilot Instructions](../.github/copilot-instructions.md) - Instrucciones generales
-- [React Instructions](../.github/react-instructions.md) - Estándares React
+- [React Instructions](../.github/instructions/react-instructions.md) - Estándares React
+- [Documentation Guide](../.github/instructions/DOCUMENTATION_GUIDE.md) - Guía de documentación
 
 ### Para Desarrolladores
 - [Backend Docs](./backend/) - Documentación backend

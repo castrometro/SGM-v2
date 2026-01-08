@@ -298,7 +298,7 @@ Generación de informes y dashboards:
   - [Backend](./docs/backend/) - Service Layer, patterns
   - [Frontend](./docs/frontend/) - Error Boundary, Code Splitting
 - **[Instrucciones para Copilot](./.github/copilot-instructions.md)** - Convenciones del proyecto
-- **[Estándares React](./.github/react-instructions.md)** - Best practices frontend
+- **[Instrucciones por Tecnología](./.github/instructions/)** - React, Django, etc.
 
 ## 📝 Licencia
 

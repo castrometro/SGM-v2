@@ -64,7 +64,7 @@ frontend/src/
 
 ## 🔗 Referencias Relacionadas
 
-- [React Instructions](../../.github/react-instructions.md) - Estándares y best practices
+- [React Instructions](../../.github/instructions/react-instructions.md) - Estándares y best practices
 - [Copilot Instructions](../../.github/copilot-instructions.md) - Convenciones generales
 - [Backend Documentation](../backend/) - Documentación del backend
 
