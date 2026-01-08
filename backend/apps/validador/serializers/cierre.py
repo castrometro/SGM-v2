@@ -75,7 +75,8 @@ class CierreCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Cierre
-        fields = ['cliente', 'periodo', 'analista', 'observaciones']
+        fields = ['id', 'cliente', 'periodo', 'analista', 'observaciones']
+        read_only_fields = ['id']
     
     def validate(self, data):
         # Verificar que no exista cierre para el mismo cliente/periodo

@@ -4,10 +4,11 @@
  */
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, FileCheck2 } from 'lucide-react'
+import { ArrowLeft, FileCheck2, Upload, GitCompare, FileText, CheckCircle, AlertTriangle, FileBarChart, Settings } from 'lucide-react'
 import api from '../../../api/axios'
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui'
 import Badge from '../../../components/ui/Badge'
+import { CargaArchivos } from '../components'
 
 const ESTADOS = {
   carga_archivos: { label: 'Carga de Archivos', color: 'info', step: 1 },
@@ -47,6 +48,106 @@ const CierreDetailPage = () => {
   }
 
   const estadoInfo = ESTADOS[cierre.estado] || { label: cierre.estado, color: 'default', step: 0 }
+
+  // Renderizar contenido según el paso actual
+  const renderStepContent = () => {
+    switch (cierre.estado) {
+      case 'carga_archivos':
+        return <CargaArchivos cierreId={id} />
+      
+      case 'clasificacion':
+        return (
+          <PlaceholderStep 
+            icon={Settings} 
+            title="Clasificación de Conceptos" 
+            description="Clasificando los conceptos del libro de remuneraciones..."
+          />
+        )
+      
+      case 'mapeo_novedades':
+        return (
+          <PlaceholderStep 
+            icon={GitCompare} 
+            title="Mapeo de Novedades" 
+            description="Mapeando las novedades con los conceptos del ERP..."
+          />
+        )
+      
+      case 'comparacion':
+        return (
+          <PlaceholderStep 
+            icon={GitCompare} 
+            title="Comparación" 
+            description="Comparando datos entre archivos ERP y del cliente..."
+          />
+        )
+      
+      case 'consolidacion':
+        return (
+          <PlaceholderStep 
+            icon={FileText} 
+            title="Consolidación" 
+            description="Consolidando resultados de la comparación..."
+          />
+        )
+      
+      case 'revision_incidencias':
+        return (
+          <PlaceholderStep 
+            icon={AlertTriangle} 
+            title="Revisión de Incidencias" 
+            description="Revise y gestione las incidencias encontradas..."
+          />
+        )
+      
+      case 'aprobacion_supervisor':
+        return (
+          <PlaceholderStep 
+            icon={CheckCircle} 
+            title="Aprobación del Supervisor" 
+            description="El cierre está pendiente de aprobación del supervisor..."
+          />
+        )
+      
+      case 'generacion_reportes':
+        return (
+          <PlaceholderStep 
+            icon={FileBarChart} 
+            title="Generación de Reportes" 
+            description="Generando reportes finales del cierre..."
+          />
+        )
+      
+      case 'completado':
+        return (
+          <PlaceholderStep 
+            icon={CheckCircle} 
+            title="Cierre Completado" 
+            description="El proceso de cierre ha finalizado exitosamente."
+            variant="success"
+          />
+        )
+      
+      case 'rechazado':
+        return (
+          <PlaceholderStep 
+            icon={AlertTriangle} 
+            title="Cierre Rechazado" 
+            description="El cierre ha sido rechazado y requiere correcciones."
+            variant="danger"
+          />
+        )
+      
+      default:
+        return (
+          <PlaceholderStep 
+            icon={FileCheck2} 
+            title={estadoInfo.label} 
+            description="Implementación pendiente de este paso..."
+          />
+        )
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -111,21 +212,36 @@ const CierreDetailPage = () => {
         </CardContent>
       </Card>
 
-      {/* Content based on state - TODO: Implement each step */}
-      <Card>
-        <CardContent className="py-12">
-          <div className="flex flex-col items-center justify-center text-secondary-400">
-            <FileCheck2 className="h-12 w-12 mb-4 opacity-50" />
-            <p className="text-lg font-medium text-secondary-200">
-              Contenido del paso: {estadoInfo.label}
-            </p>
-            <p className="text-sm mt-2">
-              Implementación pendiente de los componentes de cada fase
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Content based on state */}
+      {renderStepContent()}
     </div>
+  )
+}
+
+/**
+ * Componente placeholder para pasos no implementados
+ */
+const PlaceholderStep = ({ icon: Icon, title, description, variant = 'default' }) => {
+  const variantStyles = {
+    default: 'text-secondary-400',
+    success: 'text-green-400',
+    danger: 'text-red-400',
+  }
+
+  return (
+    <Card>
+      <CardContent className="py-12">
+        <div className="flex flex-col items-center justify-center text-secondary-400">
+          <Icon className={`h-12 w-12 mb-4 opacity-50 ${variantStyles[variant]}`} />
+          <p className={`text-lg font-medium ${variant === 'default' ? 'text-secondary-200' : variantStyles[variant]}`}>
+            {title}
+          </p>
+          <p className="text-sm mt-2 text-center max-w-md">
+            {description}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

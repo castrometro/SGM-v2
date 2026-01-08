@@ -35,10 +35,10 @@ class CierreViewSet(viewsets.ModelViewSet):
             'cliente', 'analista'
         ).all()
         
-        # Filtrar según rol
-        if user.rol == 'analista':
+        # Filtrar según tipo de usuario
+        if user.tipo_usuario == 'analista':
             queryset = queryset.filter(analista=user)
-        elif user.rol == 'senior':
+        elif user.tipo_usuario == 'senior':
             # Senior ve sus cierres y los de su equipo
             queryset = queryset.filter(
                 Q(analista=user) | 
@@ -66,6 +66,10 @@ class CierreViewSet(viewsets.ModelViewSet):
         elif self.action == 'create':
             return CierreCreateSerializer
         return CierreDetailSerializer
+    
+    def perform_create(self, serializer):
+        """Asignar el usuario actual como analista al crear un cierre."""
+        serializer.save(analista=self.request.user)
     
     @action(detail=True, methods=['post'])
     def cambiar_estado(self, request, pk=None):
