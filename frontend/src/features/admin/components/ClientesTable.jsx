@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { Building2, Edit2, Trash2, ToggleLeft, ToggleRight, Eye, UserCheck, ShieldCheck } from 'lucide-react'
 import { Table, Badge, Button, ConfirmDialog } from '../../../components/ui'
 import { useToggleClienteActivo, useDeleteCliente } from '../hooks/useClientes'
+import { TIPO_USUARIO } from '../../../constants'
 import { toast } from 'react-hot-toast'
 
 const ClientesTable = ({ clientes = [], onEdit, onView, onManageAsignaciones }) => {
@@ -109,8 +110,8 @@ const ClientesTable = ({ clientes = [], onEdit, onView, onManageAsignaciones }) 
                       <span className="flex items-center gap-1 text-xs text-secondary-300">
                         <UserCheck className="w-3 h-3" />
                         {cliente.usuario_asignado_info.nombre}
-                        <Badge variant={cliente.usuario_asignado_info.tipo_usuario === 'supervisor' ? 'primary' : 'secondary'} className="ml-1 text-[10px] py-0">
-                          {cliente.usuario_asignado_info.tipo_usuario === 'supervisor' ? 'Sup' : 'Ana'}
+                        <Badge variant={cliente.usuario_asignado_info.tipo_usuario === TIPO_USUARIO.SUPERVISOR ? 'primary' : 'secondary'} className="ml-1 text-[10px] py-0">
+                          {cliente.usuario_asignado_info.tipo_usuario === TIPO_USUARIO.SUPERVISOR ? 'Sup' : 'Ana'}
                         </Badge>
                       </span>
                       {cliente.supervisor_heredado_info && (

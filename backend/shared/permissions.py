@@ -8,6 +8,7 @@ Cada permiso de nivel superior incluye los de niveles inferiores.
 """
 
 from rest_framework import permissions
+from apps.core.constants import TipoUsuario
 
 
 class IsGerente(permissions.BasePermission):
@@ -19,7 +20,7 @@ class IsGerente(permissions.BasePermission):
         return (
             request.user and 
             request.user.is_authenticated and 
-            request.user.tipo_usuario == 'gerente'
+            request.user.tipo_usuario == TipoUsuario.GERENTE
         )
 
 
@@ -32,7 +33,7 @@ class IsSupervisor(permissions.BasePermission):
         return (
             request.user and 
             request.user.is_authenticated and 
-            request.user.tipo_usuario in ['supervisor', 'gerente']
+            request.user.tipo_usuario in TipoUsuario.PUEDEN_SUPERVISAR
         )
 
 
@@ -62,11 +63,11 @@ class IsOwnerOrSupervisor(permissions.BasePermission):
         user = request.user
         
         # Gerentes tienen acceso total
-        if user.tipo_usuario == 'gerente':
+        if user.tipo_usuario == TipoUsuario.GERENTE:
             return True
         
         # Supervisores pueden ver recursos de sus analistas
-        if user.tipo_usuario == 'supervisor':
+        if user.tipo_usuario == TipoUsuario.SUPERVISOR:
             owner = self._get_owner(obj)
             if owner:
                 return owner in user.analistas_supervisados.all() or owner == user
@@ -99,14 +100,14 @@ class CanAccessCliente(permissions.BasePermission):
         user = request.user
         
         # Gerentes tienen acceso total
-        if user.tipo_usuario == 'gerente':
+        if user.tipo_usuario == TipoUsuario.GERENTE:
             return True
         
         # Obtener el cliente del objeto
         cliente = getattr(obj, 'cliente', obj)
         
         # Supervisores: acceso a clientes de sus analistas
-        if user.tipo_usuario == 'supervisor':
+        if user.tipo_usuario == TipoUsuario.SUPERVISOR:
             from apps.core.models import AsignacionClienteUsuario
             analistas_ids = list(user.analistas_supervisados.values_list('id', flat=True))
             analistas_ids.append(user.id)  # Incluir sus propias asignaciones
@@ -153,7 +154,7 @@ class CanApproveIncidencia(permissions.BasePermission):
         return (
             request.user and 
             request.user.is_authenticated and 
-            request.user.tipo_usuario in ['supervisor', 'gerente']
+            request.user.tipo_usuario in TipoUsuario.PUEDEN_APROBAR
         )
     
     def has_object_permission(self, request, view, obj):
@@ -176,4 +177,4 @@ class IsReadOnlyOrSupervisor(permissions.BasePermission):
             return True
         
         # Escritura solo para supervisores y gerentes
-        return request.user.tipo_usuario in ['supervisor', 'gerente']
+        return request.user.tipo_usuario in TipoUsuario.PUEDEN_SUPERVISAR

@@ -4,6 +4,7 @@ Serializers de Usuario para SGM v2.
 
 from rest_framework import serializers
 from apps.core.models import Usuario
+from apps.core.constants import TipoUsuario, Permisos
 
 
 class UsuarioSerializer(serializers.ModelSerializer):
@@ -91,25 +92,50 @@ class UsuarioMeSerializer(serializers.ModelSerializer):
         ]
     
     def get_permisos(self, obj):
-        """Retorna los permisos del usuario basados en su rol."""
-        permisos = {
-            'puede_crear_cierre': True,
-            'puede_aprobar_cierre': obj.tipo_usuario in ['supervisor', 'gerente'],
-            'puede_ver_todos_clientes': obj.tipo_usuario == 'gerente',
-            'puede_gestionar_usuarios': obj.tipo_usuario == 'gerente',
-            'puede_ver_reportes_globales': obj.tipo_usuario in ['supervisor', 'gerente'],
+        """
+        Retorna los permisos del usuario basados en su rol.
+        El frontend consume estos permisos desde usePermissions.js
+        """
+        tipo = obj.tipo_usuario
+        return {
+            # Permisos de cierre
+            Permisos.CAN_CREATE_CIERRE: True,
+            Permisos.CAN_VIEW_ALL_CIERRES: tipo in TipoUsuario.PUEDEN_SUPERVISAR,
+            Permisos.CAN_APPROVE_CIERRE: tipo in TipoUsuario.PUEDEN_APROBAR,
+            
+            # Permisos de archivos
+            Permisos.CAN_UPLOAD_FILES: True,
+            Permisos.CAN_CLASSIFY_CONCEPTS: True,
+            Permisos.CAN_MAP_NOVEDADES: True,
+            
+            # Permisos de incidencias
+            Permisos.CAN_RESPOND_INCIDENCIA: True,
+            Permisos.CAN_APPROVE_INCIDENCIA: tipo in TipoUsuario.PUEDEN_APROBAR,
+            Permisos.CAN_VIEW_ALL_INCIDENCIAS: tipo in TipoUsuario.PUEDEN_SUPERVISAR,
+            
+            # Permisos de equipo
+            Permisos.CAN_VIEW_TEAM: tipo in TipoUsuario.PUEDEN_SUPERVISAR,
+            
+            # Permisos de administración
+            Permisos.CAN_MANAGE_USERS: tipo in TipoUsuario.PUEDEN_ADMINISTRAR,
+            Permisos.CAN_MANAGE_CLIENTS: tipo in TipoUsuario.PUEDEN_ADMINISTRAR,
+            Permisos.CAN_MANAGE_SERVICES: tipo in TipoUsuario.PUEDEN_ADMINISTRAR,
+            
+            # Permisos de reportes
+            Permisos.CAN_VIEW_EXECUTIVE_DASHBOARD: tipo in TipoUsuario.PUEDEN_ADMINISTRAR,
+            Permisos.CAN_VIEW_ALL_REPORTS: tipo in TipoUsuario.PUEDEN_ADMINISTRAR,
+            Permisos.CAN_VIEW_GLOBAL_REPORTS: tipo in TipoUsuario.PUEDEN_SUPERVISAR,
         }
-        return permisos
     
     def get_clientes_asignados(self, obj):
         """Retorna los IDs de clientes asignados al usuario."""
-        if obj.tipo_usuario == 'gerente':
+        if obj.tipo_usuario == TipoUsuario.GERENTE:
             return []  # Gerentes ven todos
         
         from apps.core.models import Cliente
         from django.db.models import Q
         
-        if obj.tipo_usuario == 'supervisor':
+        if obj.tipo_usuario == TipoUsuario.SUPERVISOR:
             # Clientes asignados directamente + clientes de analistas supervisados
             return list(Cliente.objects.filter(
                 Q(usuario_asignado=obj) | Q(usuario_asignado__supervisor=obj)
@@ -136,7 +162,7 @@ class UsuarioUpdateSerializer(serializers.ModelSerializer):
     
     def validate_supervisor(self, value):
         """Valida que el supervisor sea válido."""
-        if value and value.tipo_usuario not in ['supervisor', 'gerente']:
+        if value and value.tipo_usuario not in TipoUsuario.PUEDEN_SER_SUPERVISORES:
             raise serializers.ValidationError(
                 'El supervisor debe tener rol de Supervisor o Gerente.'
             )

@@ -13,6 +13,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
 from apps.core.models import Cliente, Industria, Usuario
+from apps.core.constants import TipoUsuario
 from apps.core.serializers import (
     ClienteSerializer,
     ClienteDetailSerializer,
@@ -74,13 +75,13 @@ class ClienteViewSet(viewsets.ModelViewSet):
         queryset = Cliente.objects.select_related('industria', 'usuario_asignado')
         
         # Gerentes ven todos los clientes
-        if user.tipo_usuario == 'gerente':
+        if user.tipo_usuario == TipoUsuario.GERENTE:
             return queryset
         
         # Supervisores ven:
         # - Clientes asignados directamente a ellos
         # - Clientes asignados a analistas que ellos supervisan
-        if user.tipo_usuario == 'supervisor':
+        if user.tipo_usuario == TipoUsuario.SUPERVISOR:
             return queryset.filter(
                 Q(usuario_asignado=user) | 
                 Q(usuario_asignado__supervisor=user)
@@ -163,7 +164,7 @@ class ClienteViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            if usuario.tipo_usuario not in ['analista', 'supervisor']:
+            if usuario.tipo_usuario not in TipoUsuario.PUEDEN_SER_ASIGNADOS_CLIENTE:
                 return Response(
                     {'error': 'El usuario debe ser analista o supervisor'},
                     status=status.HTTP_400_BAD_REQUEST
@@ -242,10 +243,10 @@ class ClienteViewSet(viewsets.ModelViewSet):
         user = request.user
         
         # Obtener analistas del equipo
-        if user.tipo_usuario == 'gerente':
+        if user.tipo_usuario == TipoUsuario.GERENTE:
             # Gerente ve todos los analistas
             analistas = Usuario.objects.filter(
-                tipo_usuario='analista',
+                tipo_usuario=TipoUsuario.ANALISTA,
                 is_active=True
             ).select_related('supervisor')
         else:
@@ -271,7 +272,7 @@ class ClienteViewSet(viewsets.ModelViewSet):
             })
         
         # Agregar clientes asignados directamente al supervisor (si no es gerente)
-        if user.tipo_usuario == 'supervisor':
+        if user.tipo_usuario == TipoUsuario.SUPERVISOR:
             clientes_supervisor = Cliente.objects.filter(
                 usuario_asignado=user,
                 activo=True
@@ -323,9 +324,9 @@ class ClienteViewSet(viewsets.ModelViewSet):
             )
         
         # Validar permisos
-        if user.tipo_usuario == 'gerente':
+        if user.tipo_usuario == TipoUsuario.GERENTE:
             # Gerente puede reasignar a cualquier analista/supervisor
-            if nuevo_usuario.tipo_usuario not in ['analista', 'supervisor']:
+            if nuevo_usuario.tipo_usuario not in TipoUsuario.PUEDEN_SER_ASIGNADOS_CLIENTE:
                 return Response(
                     {'error': 'Solo se puede asignar a analistas o supervisores'},
                     status=status.HTTP_400_BAD_REQUEST

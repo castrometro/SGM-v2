@@ -18,12 +18,13 @@ import {
 import Table from '../../../components/ui/Table'
 import Badge from '../../../components/ui/Badge'
 import ConfirmDialog from '../../../components/ui/ConfirmDialog'
+import { TIPO_USUARIO } from '../../../constants'
 
 // Configuración de badges por tipo de usuario
 const tipoUsuarioBadge = {
-  gerente: { variant: 'danger', icon: Shield, label: 'Gerente' },
-  supervisor: { variant: 'warning', icon: Users, label: 'Supervisor' },
-  analista: { variant: 'info', icon: Briefcase, label: 'Analista' },
+  [TIPO_USUARIO.GERENTE]: { variant: 'danger', icon: Shield, label: 'Gerente' },
+  [TIPO_USUARIO.SUPERVISOR]: { variant: 'warning', icon: Users, label: 'Supervisor' },
+  [TIPO_USUARIO.ANALISTA]: { variant: 'info', icon: Briefcase, label: 'Analista' },
 }
 
 const UsuariosTable = ({
@@ -121,7 +122,7 @@ const UsuariosTable = ({
             <Table.Empty message="No hay usuarios registrados" colSpan={6} />
           ) : (
             usuarios.map((usuario) => {
-              const tipoConfig = tipoUsuarioBadge[usuario.tipo_usuario] || tipoUsuarioBadge.analista
+              const tipoConfig = tipoUsuarioBadge[usuario.tipo_usuario] || tipoUsuarioBadge[TIPO_USUARIO.ANALISTA]
               const TipoIcon = tipoConfig.icon
               const isCurrentUser = usuario.id === currentUserId
 
@@ -159,7 +160,7 @@ const UsuariosTable = ({
 
                   {/* Supervisor */}
                   <Table.Cell>
-                    {usuario.tipo_usuario !== 'analista' ? (
+                    {usuario.tipo_usuario !== TIPO_USUARIO.ANALISTA ? (
                       <span className="text-secondary-500">-</span>
                     ) : usuario.supervisor_info ? (
                       <button 
@@ -212,7 +213,7 @@ const UsuariosTable = ({
                       </button>
                       
                       {/* Botón asignar supervisor - solo para analistas */}
-                      {usuario.tipo_usuario === 'analista' && (
+                      {usuario.tipo_usuario === TIPO_USUARIO.ANALISTA && (
                         <button
                           onClick={() => onAsignarSupervisor?.(usuario)}
                           className="p-2 rounded-lg text-secondary-400 hover:text-primary-400 hover:bg-primary-500/10 transition-colors"
@@ -220,7 +221,7 @@ const UsuariosTable = ({
                         >
                           <UserCog className="w-4 h-4" />
                         </button>
-                      )}
+                      )}}
                       
                       <button
                         onClick={() => handleAction('toggleActive', usuario)}

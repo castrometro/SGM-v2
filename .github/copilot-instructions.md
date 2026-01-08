@@ -214,17 +214,117 @@ import { locales } from './archivo'
 ## Cosas a Evitar
 
 1. **No poner lógica de negocio en views** - Usar Service Layer
-2. **No duplicar lógica de permisos** - Centralizar en backend
-3. **No usar magic strings** - Usar constantes (Issue #18)
-4. **No mezclar Context y Zustand** - Preferir Zustand (Issue #16)
+2. **No duplicar lógica de permisos** - Centralizar en backend (`/api/v1/core/me/` incluye permisos)
+3. **No usar magic strings** - Usar constantes (✅ Resuelto #18)
+4. **No usar useAuthStore en componentes React** - Usar `useAuth()` (✅ Resuelto #16)
 5. **No hacer queries N+1** - Usar `select_related`/`prefetch_related`
 6. **No hardcodear URLs** - Usar variables de entorno
 
+## Constantes Centralizadas (Issue #18 ✅)
+
+### Backend
+Las constantes están en:
+- `apps/core/constants.py` - TipoUsuario, Permisos
+- `apps/validador/constants.py` - EstadoCierre, EstadoIncidencia, TipoArchivo
+
+```python
+from apps.core.constants import TipoUsuario
+
+# Usar
+if user.tipo_usuario == TipoUsuario.GERENTE:
+if user.tipo_usuario in TipoUsuario.PUEDEN_APROBAR:
+
+from apps.validador.constants import EstadoCierre, EstadoIncidencia
+
+# Usar
+if cierre.estado == EstadoCierre.CONSOLIDADO:
+if incidencia.estado in EstadoIncidencia.ESTADOS_ABIERTOS:
+```
+
+### Frontend
+Las constantes espejo están en `frontend/src/constants/index.js`:
+
+```javascript
+import { TIPO_USUARIO, ESTADO_CIERRE, PUEDEN_APROBAR } from '@/constants'
+
+// Usar
+if (user.tipo_usuario === TIPO_USUARIO.GERENTE) { ... }
+if (cierre.estado === ESTADO_CIERRE.CONSOLIDADO) { ... }
+if (PUEDEN_APROBAR.includes(user.tipo_usuario)) { ... }
+```
+
+## Permisos Centralizados (Issue #17 ✅)
+
+Los permisos se calculan en el backend y se envían en `/api/v1/core/me/`:
+
+```json
+{
+  "id": 1,
+  "email": "user@example.com",
+  "permisos": {
+    "canCreateCierre": true,
+    "canApproveIncidencia": true,
+    "canManageUsers": false,
+    ...
+  }
+}
+```
+
+Frontend consume via `usePermissions()`:
+```javascript
+const { canApproveIncidencia, canManageUsers } = usePermissions()
+```
+
+## Autenticación: Context vs Zustand (Issue #16 ✅)
+
+El estado de autenticación usa **ambos**, con roles claramente definidos:
+
+### Cuándo usar cada uno
+
+| Situación | Usar | Ejemplo |
+|-----------|------|---------|
+| Componentes React | `useAuth()` | `const { user, login, logout } = useAuth()` |
+| Interceptors Axios | `useAuthStore.getState()` | Ver `src/api/axios.js` |
+| Permisos detallados | `usePermissions()` | `const { canApproveIncidencia } = usePermissions()` |
+
+### Estructura
+
+```
+AuthContext.jsx          <- Wrapper que usa useAuthStore internamente
+    ↓ expone useAuth()
+    
+authStore.js             <- Estado real (Zustand con persistencia)
+    ↓ usado por
+    
+usePermissions.js        <- Permisos detallados del backend
+axios.js                 <- Interceptors (fuera de React)
+```
+
+### Propiedades disponibles
+
+```javascript
+// useAuth() - uso general en componentes
+const { 
+  user,              // Objeto usuario completo
+  isAuthenticated,   // Boolean
+  isLoading,         // Boolean (verificando token)
+  login,             // Función async
+  logout,            // Función
+  // Helpers de rol incluidos:
+  isAnalista, isSupervisor, isGerente, 
+  isSupervisorOrHigher, canApprove
+} = useAuth()
+
+// usePermissions() - permisos granulares
+const {
+  canCreateCierre, canApproveIncidencia, 
+  canManageUsers, canViewTeam, ...
+} = usePermissions()
+```
+
 ## Issues Técnicos Pendientes
 
-- #16: Consolidar Context API vs Zustand
-- #17: Centralizar lógica de permisos
-- #18: Eliminar magic strings
+(Todos los issues de arquitectura resueltos ✅)
 
 ## Comandos Útiles
 
@@ -256,6 +356,23 @@ cd frontend && npm run dev
 ## Changelog
 
 > Actualizar este archivo cuando se establezcan nuevos patrones, se resuelvan issues de arquitectura, o cambien convenciones importantes.
+
+### 2026-01-08 (tarde)
+- ✅ **Issue #18 RESUELTO**: Constantes centralizadas creadas
+  - Backend: `apps/core/constants.py` (TipoUsuario, Permisos)
+  - Backend: `apps/validador/constants.py` (EstadoCierre, EstadoIncidencia, TipoArchivo)
+  - Frontend: `src/constants/index.js` (espejo de backend)
+  - Refactorizados: shared/permissions.py, modelos, views, services, hooks, stores, componentes
+- ✅ **Issue #17 RESUELTO**: Permisos centralizados
+  - Backend calcula permisos en `get_permisos()` del serializer UsuarioMe
+  - Permisos enviados en respuesta de `/api/v1/core/me/`
+  - `usePermissions.js` ahora consume permisos del backend como fuente de verdad
+- ✅ **Issue #16 RESUELTO**: Context vs Zustand consolidado
+  - `useAuth()` es el hook estándar para componentes React
+  - `useAuthStore.getState()` solo para código no-React (axios interceptors)
+  - `usePermissions()` para permisos detallados
+  - Sidebar.jsx refactorizado para usar `useAuth()` en lugar de `useAuthStore`
+  - Documentación clara en cada archivo sobre cuándo usar cada opción
 
 ### 2026-01-08
 - ✅ Creación inicial del archivo

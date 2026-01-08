@@ -10,6 +10,7 @@ Roles del sistema (jerarquía de permisos heredados):
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.core.exceptions import ValidationError
+from apps.core.constants import TipoUsuario
 
 
 class UsuarioManager(BaseUserManager):
@@ -31,7 +32,7 @@ class UsuarioManager(BaseUserManager):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
         extra_fields.setdefault('is_active', True)
-        extra_fields.setdefault('tipo_usuario', 'gerente')
+        extra_fields.setdefault('tipo_usuario', TipoUsuario.GERENTE)
         
         if extra_fields.get('is_staff') is not True:
             raise ValueError('Superuser debe tener is_staff=True.')
@@ -52,11 +53,8 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     Cada rol hereda los permisos del anterior.
     """
     
-    TIPO_USUARIO_CHOICES = [
-        ('analista', 'Analista'),
-        ('supervisor', 'Supervisor'),
-        ('gerente', 'Gerente'),
-    ]
+    # Usar CHOICES de la clase TipoUsuario
+    TIPO_USUARIO_CHOICES = TipoUsuario.CHOICES
     
     # Campos de identificación
     email = models.EmailField(
@@ -88,7 +86,7 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
         null=True,
         blank=True,
         related_name='analistas_supervisados',
-        limit_choices_to={'tipo_usuario__in': ['supervisor', 'gerente']},
+        limit_choices_to={'tipo_usuario__in': TipoUsuario.PUEDEN_SER_SUPERVISORES},
         help_text='Supervisor asignado a este usuario'
     )
     
@@ -127,13 +125,13 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
         
         # Solo analistas pueden tener supervisor asignado
         if self.supervisor:
-            if self.tipo_usuario != 'analista':
+            if self.tipo_usuario != TipoUsuario.ANALISTA:
                 raise ValidationError({
                     'supervisor': 'Solo los analistas pueden tener un supervisor asignado.'
                 })
             
             # El supervisor debe ser supervisor o gerente
-            if self.supervisor.tipo_usuario not in ['supervisor', 'gerente']:
+            if self.supervisor.tipo_usuario not in TipoUsuario.PUEDEN_SER_SUPERVISORES:
                 raise ValidationError({
                     'supervisor': 'El supervisor debe tener rol de supervisor o gerente.'
                 })
@@ -151,22 +149,22 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     @property
     def es_analista(self):
         """Verifica si el usuario es analista."""
-        return self.tipo_usuario == 'analista'
+        return self.tipo_usuario == TipoUsuario.ANALISTA
     
     @property
     def es_supervisor(self):
         """Verifica si el usuario es supervisor."""
-        return self.tipo_usuario == 'supervisor'
+        return self.tipo_usuario == TipoUsuario.SUPERVISOR
     
     @property
     def es_gerente(self):
         """Verifica si el usuario es gerente."""
-        return self.tipo_usuario == 'gerente'
+        return self.tipo_usuario == TipoUsuario.GERENTE
     
     @property
     def es_supervisor_o_superior(self):
         """Verifica si el usuario es supervisor o tiene rol superior."""
-        return self.tipo_usuario in ['supervisor', 'gerente']
+        return self.tipo_usuario in TipoUsuario.PUEDEN_SUPERVISAR
     
     # =========================================================================
     # Métodos de acceso a recursos

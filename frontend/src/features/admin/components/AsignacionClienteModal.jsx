@@ -18,6 +18,7 @@ import Button from '../../../components/ui/Button'
 import { Badge, Select } from '../../../components/ui'
 import { useInfoAsignacion, useAsignarUsuario, useDesasignarUsuario } from '../hooks'
 import { useUsuarios } from '../hooks'
+import { TIPO_USUARIO, PUEDEN_SER_ASIGNADOS_CLIENTE } from '../../../constants'
 import toast from 'react-hot-toast'
 
 const AsignacionClienteModal = ({ 
@@ -44,7 +45,7 @@ const AsignacionClienteModal = ({
   
   // Filtrar usuarios disponibles (analistas y supervisores activos)
   const usuariosDisponibles = todosUsuarios.filter(
-    u => (u.tipo_usuario === 'analista' || u.tipo_usuario === 'supervisor') && u.is_active
+    u => PUEDEN_SER_ASIGNADOS_CLIENTE.includes(u.tipo_usuario) && u.is_active
   )
   
   const handleAsignarUsuario = async () => {
@@ -119,10 +120,10 @@ const AsignacionClienteModal = ({
                       <p className="text-xs text-secondary-400">{usuarioAsignado.email}</p>
                     </div>
                     <Badge 
-                      variant={usuarioAsignado.tipo_usuario === 'supervisor' ? 'primary' : 'secondary'}
+                      variant={usuarioAsignado.tipo_usuario === TIPO_USUARIO.SUPERVISOR ? 'primary' : 'secondary'}
                       className="ml-2"
                     >
-                      {usuarioAsignado.tipo_usuario === 'supervisor' ? 'Supervisor' : 'Analista'}
+                      {usuarioAsignado.tipo_usuario === TIPO_USUARIO.SUPERVISOR ? 'Supervisor' : 'Analista'}
                     </Badge>
                   </div>
                   <button

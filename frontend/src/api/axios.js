@@ -1,6 +1,10 @@
 /**
  * Configuración de Axios con interceptores
  * Maneja tokens JWT y refresh automático
+ * 
+ * NOTA (Issue #16): Este es un caso válido de uso de useAuthStore.getState()
+ * porque los interceptors de axios no están en el contexto de React.
+ * NO cambiar a useAuth() - causaría errores.
  */
 import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'

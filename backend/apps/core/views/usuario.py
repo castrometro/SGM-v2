@@ -12,6 +12,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
 from apps.core.models import Usuario
+from apps.core.constants import TipoUsuario
 from apps.core.serializers import (
     UsuarioSerializer, 
     UsuarioCreateSerializer,
@@ -56,11 +57,11 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         queryset = Usuario.objects.select_related('supervisor')
         
         # Gerentes ven todos
-        if user.tipo_usuario == 'gerente':
+        if user.tipo_usuario == TipoUsuario.GERENTE:
             return queryset
         
         # Supervisores ven a sus analistas y a sí mismos
-        if user.tipo_usuario == 'supervisor':
+        if user.tipo_usuario == TipoUsuario.SUPERVISOR:
             from django.db.models import Q
             return queryset.filter(
                 Q(id=user.id) | Q(supervisor=user)
@@ -104,14 +105,14 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def analistas(self, request):
         """Lista solo usuarios con rol de analista."""
-        analistas = self.get_queryset().filter(tipo_usuario='analista', is_active=True)
+        analistas = self.get_queryset().filter(tipo_usuario=TipoUsuario.ANALISTA, is_active=True)
         serializer = self.get_serializer(analistas, many=True)
         return Response(serializer.data)
     
     @action(detail=False, methods=['get'])
     def supervisores(self, request):
         """Lista solo usuarios con rol de supervisor."""
-        supervisores = Usuario.objects.filter(tipo_usuario='supervisor', is_active=True)
+        supervisores = Usuario.objects.filter(tipo_usuario=TipoUsuario.SUPERVISOR, is_active=True)
         serializer = self.get_serializer(supervisores, many=True)
         return Response(serializer.data)
     
@@ -182,7 +183,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         analista = self.get_object()
         
         # Validar que sea un analista
-        if analista.tipo_usuario != 'analista':
+        if analista.tipo_usuario != TipoUsuario.ANALISTA:
             return Response(
                 {'error': 'Solo se puede asignar supervisor a usuarios de tipo analista.'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -208,7 +209,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        if supervisor.tipo_usuario not in ['supervisor', 'gerente']:
+        if supervisor.tipo_usuario not in TipoUsuario.PUEDEN_SER_SUPERVISORES:
             return Response(
                 {'error': 'El usuario seleccionado no es supervisor ni gerente.'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -235,7 +236,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         GET /api/v1/core/usuarios/sin_supervisor/
         """
         analistas = Usuario.objects.filter(
-            tipo_usuario='analista',
+            tipo_usuario=TipoUsuario.ANALISTA,
             supervisor__isnull=True,
             is_active=True
         ).select_related('supervisor')
@@ -252,7 +253,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         from django.db.models import Count
         
         supervisores = Usuario.objects.filter(
-            tipo_usuario__in=['supervisor', 'gerente'],
+            tipo_usuario__in=TipoUsuario.PUEDEN_SER_SUPERVISORES,
             is_active=True
         ).annotate(
             total_analistas=Count('analistas_supervisados', filter=models.Q(analistas_supervisados__is_active=True))
@@ -293,7 +294,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         if supervisor_id is not None:
             try:
                 supervisor = Usuario.objects.get(pk=supervisor_id)
-                if supervisor.tipo_usuario not in ['supervisor', 'gerente']:
+                if supervisor.tipo_usuario not in TipoUsuario.PUEDEN_SER_SUPERVISORES:
                     return Response(
                         {'error': 'El usuario seleccionado no es supervisor ni gerente.'},
                         status=status.HTTP_400_BAD_REQUEST
@@ -307,7 +308,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         # Actualizar analistas
         updated = Usuario.objects.filter(
             id__in=analista_ids,
-            tipo_usuario='analista'
+            tipo_usuario=TipoUsuario.ANALISTA
         ).update(supervisor=supervisor)
         
         mensaje = f'{updated} analista(s) reasignado(s)'

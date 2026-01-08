@@ -18,6 +18,7 @@ import {
 import { useAuth } from '../../../contexts/AuthContext'
 import { Card, CardContent, Modal, Select } from '../../../components/ui'
 import Button from '../../../components/ui/Button'
+import { TIPO_USUARIO } from '../../../constants'
 import { 
   useUsuarios, 
   useCreateUsuario, 
@@ -79,9 +80,9 @@ const UsuariosPage = () => {
   // Estadísticas
   const stats = useMemo(() => ({
     total: usuarios.length,
-    gerentes: usuarios.filter(u => u.tipo_usuario === 'gerente').length,
-    supervisores: usuarios.filter(u => u.tipo_usuario === 'supervisor').length,
-    analistas: usuarios.filter(u => u.tipo_usuario === 'analista').length,
+    gerentes: usuarios.filter(u => u.tipo_usuario === TIPO_USUARIO.GERENTE).length,
+    supervisores: usuarios.filter(u => u.tipo_usuario === TIPO_USUARIO.SUPERVISOR).length,
+    analistas: usuarios.filter(u => u.tipo_usuario === TIPO_USUARIO.ANALISTA).length,
     activos: usuarios.filter(u => u.is_active).length,
     inactivos: usuarios.filter(u => !u.is_active).length,
   }), [usuarios])

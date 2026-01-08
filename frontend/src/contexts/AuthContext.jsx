@@ -1,11 +1,19 @@
 /**
  * Context de autenticación
  * Integrado con Zustand store para persistencia
+ * 
+ * USO ESTÁNDAR:
+ * - En componentes React: usar `useAuth()` (este hook)
+ * - En archivos no-React (ej: axios interceptors): usar `useAuthStore.getState()`
+ * - Para permisos detallados: usar `usePermissions()`
+ * 
+ * @see Issue #16 - Consolidación Context vs Zustand
  */
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../api/axios'
 import { useAuthStore } from '../stores/authStore'
+import { TIPO_USUARIO, PUEDEN_SUPERVISAR, PUEDEN_APROBAR } from '../constants'
 
 const AuthContext = createContext(null)
 
@@ -72,6 +80,15 @@ export const AuthProvider = ({ children }) => {
     navigate('/login')
   }
 
+  // Helpers de rol derivados (Issue #16 - estandarización)
+  const roleHelpers = useMemo(() => ({
+    isAnalista: user?.tipo_usuario === TIPO_USUARIO.ANALISTA,
+    isSupervisor: user?.tipo_usuario === TIPO_USUARIO.SUPERVISOR,
+    isGerente: user?.tipo_usuario === TIPO_USUARIO.GERENTE,
+    isSupervisorOrHigher: PUEDEN_SUPERVISAR.includes(user?.tipo_usuario),
+    canApprove: PUEDEN_APROBAR.includes(user?.tipo_usuario),
+  }), [user?.tipo_usuario])
+
   const value = {
     user,
     isAuthenticated,
@@ -79,6 +96,8 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     checkAuth,
+    // Helpers de rol expuestos para conveniencia
+    ...roleHelpers,
   }
 
   return (

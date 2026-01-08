@@ -3,6 +3,7 @@
  */
 import { useForm } from 'react-hook-form'
 import { Input, Select, Button } from '../../../components/ui'
+import { TIPO_USUARIO, TIPO_USUARIO_BADGE } from '../../../constants'
 
 const UsuarioForm = ({ 
   usuario = null, 
@@ -31,7 +32,7 @@ const UsuarioForm = ({
       email: '',
       nombre: '',
       apellido: '',
-      tipo_usuario: 'analista',
+      tipo_usuario: TIPO_USUARIO.ANALISTA,
       cargo: '',
       supervisor: '',
       password: '',
@@ -42,9 +43,9 @@ const UsuarioForm = ({
   const tipoUsuario = watch('tipo_usuario')
 
   const tipoUsuarioOptions = [
-    { value: 'analista', label: 'Analista' },
-    { value: 'supervisor', label: 'Supervisor' },
-    { value: 'gerente', label: 'Gerente' },
+    { value: TIPO_USUARIO.ANALISTA, label: TIPO_USUARIO_BADGE[TIPO_USUARIO.ANALISTA].label },
+    { value: TIPO_USUARIO.SUPERVISOR, label: TIPO_USUARIO_BADGE[TIPO_USUARIO.SUPERVISOR].label },
+    { value: TIPO_USUARIO.GERENTE, label: TIPO_USUARIO_BADGE[TIPO_USUARIO.GERENTE].label },
   ]
 
   const supervisorOptions = supervisores
@@ -139,7 +140,7 @@ const UsuarioForm = ({
         </div>
 
         {/* Solo mostrar selector de supervisor para analistas */}
-        {tipoUsuario === 'analista' && (
+        {tipoUsuario === TIPO_USUARIO.ANALISTA && (
           <Select
             label="Supervisor Asignado"
             options={supervisorOptions}

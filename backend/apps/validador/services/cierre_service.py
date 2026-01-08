@@ -14,6 +14,7 @@ from typing import Optional, List, Dict, Any
 
 from .base import BaseService, ServiceResult
 from ..models import Cierre
+from ..constants import EstadoCierre
 
 
 class CierreService(BaseService):
@@ -90,9 +91,9 @@ class CierreService(BaseService):
                 cierre.estado = nuevo_estado
                 
                 # Actualizar campos según el nuevo estado
-                if nuevo_estado == 'consolidado':
+                if nuevo_estado == EstadoCierre.CONSOLIDADO:
                     cierre.fecha_consolidacion = timezone.now()
-                elif nuevo_estado == 'finalizado':
+                elif nuevo_estado == EstadoCierre.FINALIZADO:
                     cierre.fecha_finalizacion = timezone.now()
                     if user:
                         cierre.finalizado_por = user
@@ -140,7 +141,7 @@ class CierreService(BaseService):
                 'No se puede consolidar. Hay discrepancias pendientes o archivos faltantes.'
             )
         
-        if cierre.estado != 'comparacion':
+        if cierre.estado != EstadoCierre.COMPARACION:
             return ServiceResult.fail(
                 f'Solo se puede consolidar desde estado "comparacion". Estado actual: {cierre.estado}'
             )
@@ -148,7 +149,7 @@ class CierreService(BaseService):
         try:
             with transaction.atomic():
                 # Cambiar a consolidado
-                result = cls.cambiar_estado(cierre, 'consolidado', user, validar_transicion=False)
+                result = cls.cambiar_estado(cierre, EstadoCierre.CONSOLIDADO, user, validar_transicion=False)
                 if not result.success:
                     return result
                 
@@ -160,7 +161,7 @@ class CierreService(BaseService):
                     return cls.finalizar(cierre, user)
                 
                 # Si no, pasar a detección de incidencias
-                result = cls.cambiar_estado(cierre, 'deteccion_incidencias', user, validar_transicion=False)
+                result = cls.cambiar_estado(cierre, EstadoCierre.DETECCION_INCIDENCIAS, user, validar_transicion=False)
                 if not result.success:
                     return result
                 
@@ -190,14 +191,14 @@ class CierreService(BaseService):
                 'No se puede finalizar. Hay incidencias pendientes de aprobación.'
             )
         
-        estados_permitidos = ['consolidado', 'revision_incidencias', 'deteccion_incidencias']
+        estados_permitidos = EstadoCierre.ESTADOS_PUEDEN_FINALIZAR
         if cierre.estado not in estados_permitidos:
             return ServiceResult.fail(
                 f'Solo se puede finalizar desde estados {estados_permitidos}. Estado actual: {cierre.estado}'
             )
         
         try:
-            result = cls.cambiar_estado(cierre, 'finalizado', user, validar_transicion=False)
+            result = cls.cambiar_estado(cierre, EstadoCierre.FINALIZADO, user, validar_transicion=False)
             
             if result.success:
                 logger.info(f"Cierre {cierre.id} finalizado por {user}")
@@ -285,15 +286,15 @@ class CierreService(BaseService):
         """
         logger = cls.get_logger()
         
-        if cierre.estado == 'finalizado':
+        if cierre.estado == EstadoCierre.FINALIZADO:
             return ServiceResult.fail('No se puede cancelar un cierre finalizado.')
         
-        if cierre.estado == 'cancelado':
+        if cierre.estado == EstadoCierre.CANCELADO:
             return ServiceResult.fail('El cierre ya está cancelado.')
         
         try:
             with transaction.atomic():
-                cierre.estado = 'cancelado'
+                cierre.estado = EstadoCierre.CANCELADO
                 if motivo:
                     cierre.notas = f"{cierre.notas or ''}\n[CANCELADO]: {motivo}".strip()
                 cierre.save()

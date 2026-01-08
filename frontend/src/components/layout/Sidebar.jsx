@@ -24,12 +24,12 @@ import {
   PanelLeftClose,
   PanelLeft
 } from 'lucide-react'
-import { useAuthStore } from '../../stores/authStore'
+import { useAuth } from '../../contexts/AuthContext'
 import { usePermissions } from '../../hooks/usePermissions'
 import { cn } from '../../utils/cn'
 
 const Sidebar = () => {
-  const user = useAuthStore((state) => state.user)
+  const { user } = useAuth()
   const { isSupervisor, isGerente } = usePermissions()
   const location = useLocation()
   const [expandedMenus, setExpandedMenus] = useState({})

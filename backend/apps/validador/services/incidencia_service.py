@@ -15,6 +15,8 @@ from typing import Optional, Dict, Any, List
 
 from .base import BaseService, ServiceResult
 from ..models import Incidencia, ComentarioIncidencia, Cierre
+from ..constants import EstadoIncidencia
+from apps.core.constants import TipoUsuario
 
 
 class IncidenciaService(BaseService):
@@ -25,7 +27,7 @@ class IncidenciaService(BaseService):
     que requieren aprobación de un supervisor.
     """
     
-    ESTADOS_INCIDENCIA = ['pendiente', 'en_revision', 'aprobada', 'rechazada']
+    ESTADOS_INCIDENCIA = EstadoIncidencia.ALL
     
     @classmethod
     def resolver(
@@ -49,7 +51,7 @@ class IncidenciaService(BaseService):
         if accion not in ['aprobar', 'rechazar']:
             return ServiceResult.fail("Acción debe ser 'aprobar' o 'rechazar'")
         
-        if incidencia.estado in ['aprobada', 'rechazada']:
+        if incidencia.estado in EstadoIncidencia.ESTADOS_RESUELTOS:
             return ServiceResult.fail(
                 f'La incidencia ya fue {incidencia.estado}'
             )
@@ -63,7 +65,7 @@ class IncidenciaService(BaseService):
         try:
             with transaction.atomic():
                 # Actualizar incidencia
-                incidencia.estado = 'aprobada' if accion == 'aprobar' else 'rechazada'
+                incidencia.estado = EstadoIncidencia.APROBADA if accion == 'aprobar' else EstadoIncidencia.RECHAZADA
                 incidencia.resuelto_por = user
                 incidencia.fecha_resolucion = timezone.now()
                 incidencia.motivo_resolucion = motivo or ''
@@ -125,8 +127,8 @@ class IncidenciaService(BaseService):
                 )
                 
                 # Si estaba pendiente, cambiar a en_revision
-                if incidencia.estado == 'pendiente':
-                    incidencia.estado = 'en_revision'
+                if incidencia.estado == EstadoIncidencia.PENDIENTE:
+                    incidencia.estado = EstadoIncidencia.EN_REVISION
                     incidencia.save()
                 
                 cls.log_action(
@@ -173,13 +175,13 @@ class IncidenciaService(BaseService):
             },
             'resumen': {
                 'pendientes': incidencias.filter(
-                    estado__in=['pendiente', 'en_revision']
+                    estado__in=EstadoIncidencia.ESTADOS_ABIERTOS
                 ).count(),
-                'aprobadas': incidencias.filter(estado='aprobada').count(),
-                'rechazadas': incidencias.filter(estado='rechazada').count(),
+                'aprobadas': incidencias.filter(estado=EstadoIncidencia.APROBADA).count(),
+                'rechazadas': incidencias.filter(estado=EstadoIncidencia.RECHAZADA).count(),
             },
             'puede_finalizar': not incidencias.filter(
-                estado__in=['pendiente', 'en_revision']
+                estado__in=EstadoIncidencia.ESTADOS_ABIERTOS
             ).exists(),
         }
     
@@ -211,7 +213,7 @@ class IncidenciaService(BaseService):
         
         if solo_pendientes:
             incidencias = incidencias.filter(
-                estado__in=['pendiente', 'en_revision']
+                estado__in=EstadoIncidencia.ESTADOS_ABIERTOS
             )
         
         # Agrupar por analista
@@ -243,11 +245,11 @@ class IncidenciaService(BaseService):
             'por_analista': list(resultado.values()),
             'total': incidencias.count(),
             'pendientes': incidencias.filter(
-                estado__in=['pendiente', 'en_revision']
+                estado__in=EstadoIncidencia.ESTADOS_ABIERTOS
             ).count(),
         }
     
     @classmethod
     def _puede_resolver(cls, user) -> bool:
         """Verificar si el usuario puede resolver incidencias."""
-        return user.tipo_usuario in ['supervisor', 'senior', 'gerente']
+        return user.tipo_usuario in TipoUsuario.PUEDEN_APROBAR
