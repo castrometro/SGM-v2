@@ -30,7 +30,7 @@ import { cn } from '../../utils/cn'
 
 const Sidebar = () => {
   const user = useAuthStore((state) => state.user)
-  const { isSupervisorOrHigher, isGerente } = usePermissions()
+  const { isSupervisor, isGerente } = usePermissions()
   const location = useLocation()
   const [expandedMenus, setExpandedMenus] = useState({})
   const [isCollapsed, setIsCollapsed] = useState(() => {
@@ -252,7 +252,8 @@ const Sidebar = () => {
           <NavItem key={item.name} item={item} />
         ))}
         
-        {isSupervisorOrHigher && (
+        {/* Sección Supervisor - solo para supervisores, no gerentes */}
+        {isSupervisor && (
           <>
             <SectionTitle>Supervisión</SectionTitle>
             {supervisorNavigation.map((item) => (
