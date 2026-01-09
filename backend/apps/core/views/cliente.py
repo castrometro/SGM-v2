@@ -112,7 +112,14 @@ class ClienteViewSet(viewsets.ModelViewSet):
     def mis_clientes(self, request):
         """Obtiene solo los clientes asignados directamente al usuario."""
         user = request.user
-        clientes = Cliente.objects.filter(usuario_asignado=user)
+        clientes = Cliente.objects.filter(
+            usuario_asignado=user
+        ).select_related(
+            'industria', 'usuario_asignado'
+        ).prefetch_related(
+            'configuraciones_erp',
+            'configuraciones_erp__erp'
+        )
         serializer = ClienteSerializer(clientes, many=True)
         return Response(serializer.data)
     
