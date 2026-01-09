@@ -22,6 +22,18 @@ from .concepto import (
     MapeoItemCrearSerializer,
     ItemSinMapearSerializer,
 )
+from .libro import (
+    ConceptoLibroSerializer,
+    ConceptoLibroListSerializer,
+    ConceptoLibroClasificarSerializer,
+    ClasificacionMasivaSerializer,
+    EmpleadoLibroSerializer,
+    EmpleadoLibroListSerializer,
+    EmpleadoLibroResumenSerializer,
+    HeadersResponseSerializer,
+    ProcesamientoResponseSerializer,
+    ProgresoLibroSerializer,
+)
 from .discrepancia import (
     DiscrepanciaSerializer,
     DiscrepanciaResumenSerializer,
@@ -62,6 +74,18 @@ __all__ = [
     'MapeoItemNovedadesSerializer',
     'MapeoItemCrearSerializer',
     'ItemSinMapearSerializer',
+    
+    # Libro
+    'ConceptoLibroSerializer',
+    'ConceptoLibroListSerializer',
+    'ConceptoLibroClasificarSerializer',
+    'ClasificacionMasivaSerializer',
+    'EmpleadoLibroSerializer',
+    'EmpleadoLibroListSerializer',
+    'EmpleadoLibroResumenSerializer',
+    'HeadersResponseSerializer',
+    'ProcesamientoResponseSerializer',
+    'ProgresoLibroSerializer',
     
     # Discrepancias
     'DiscrepanciaSerializer',
