@@ -12,6 +12,8 @@ from .views import (
     IndustriaViewSet,
     ServicioViewSet,
     ServicioClienteViewSet,
+    ERPViewSet,
+    ConfiguracionERPClienteViewSet,
 )
 
 router = DefaultRouter()
@@ -20,6 +22,8 @@ router.register(r'clientes', ClienteViewSet, basename='cliente')
 router.register(r'industrias', IndustriaViewSet, basename='industria')
 router.register(r'servicios', ServicioViewSet, basename='servicio')
 router.register(r'servicios-cliente', ServicioClienteViewSet, basename='servicio-cliente')
+router.register(r'erps', ERPViewSet, basename='erp')
+router.register(r'configuraciones-erp', ConfiguracionERPClienteViewSet, basename='configuracion-erp')
 
 urlpatterns = [
     path('me/', MeView.as_view(), name='me'),

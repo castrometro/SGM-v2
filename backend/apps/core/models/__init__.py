@@ -2,6 +2,7 @@
 from .usuario import Usuario, UsuarioManager
 from .cliente import Cliente, Industria
 from .servicio import Servicio, ServicioCliente
+from .erp import ERP, ConfiguracionERPCliente
 
 __all__ = [
     'Usuario',
@@ -10,4 +11,6 @@ __all__ = [
     'Industria',
     'Servicio',
     'ServicioCliente',
+    'ERP',
+    'ConfiguracionERPCliente',
 ]

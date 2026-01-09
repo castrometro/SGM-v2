@@ -27,6 +27,12 @@ Patrón ServiceResult:
     - data: datos retornados (si success=True)
     - error: mensaje de error (si success=False)
     - errors: dict con múltiples errores de validación
+
+ERP Factory/Strategy:
+    from apps.validador.services.erp import ERPFactory
+    
+    strategy = ERPFactory.get_strategy('talana')
+    result = strategy.parse_archivo(file, 'libro_remuneraciones')
 """
 
 from .base import BaseService, ServiceResult
@@ -34,6 +40,9 @@ from .cierre_service import CierreService
 from .archivo_service import ArchivoService
 from .incidencia_service import IncidenciaService
 from .equipo_service import EquipoService
+
+# ERP Factory/Strategy
+from .erp import ERPFactory, ERPStrategy, ParseResult, FormatoEsperado
 
 
 __all__ = [
@@ -46,4 +55,10 @@ __all__ = [
     'ArchivoService',
     'IncidenciaService',
     'EquipoService',
+    
+    # ERP Factory/Strategy
+    'ERPFactory',
+    'ERPStrategy',
+    'ParseResult',
+    'FormatoEsperado',
 ]

@@ -15,6 +15,15 @@ from .cliente import (
     UsuarioAsignadoSerializer,
 )
 from .servicio import ServicioSerializer, ServicioClienteSerializer
+from .erp import (
+    ERPSerializer,
+    ERPDetailSerializer,
+    ERPCreateSerializer,
+    ConfiguracionERPClienteSerializer,
+    ConfiguracionERPClienteDetailSerializer,
+    ConfiguracionERPClienteCreateSerializer,
+    ConfiguracionERPClienteMinimalSerializer,
+)
 
 __all__ = [
     'UsuarioSerializer',
@@ -30,4 +39,12 @@ __all__ = [
     'ServicioSerializer',
     'ServicioClienteSerializer',
     'UsuarioAsignadoSerializer',
+    # ERP
+    'ERPSerializer',
+    'ERPDetailSerializer',
+    'ERPCreateSerializer',
+    'ConfiguracionERPClienteSerializer',
+    'ConfiguracionERPClienteDetailSerializer',
+    'ConfiguracionERPClienteCreateSerializer',
+    'ConfiguracionERPClienteMinimalSerializer',
 ]

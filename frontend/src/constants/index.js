@@ -362,6 +362,99 @@ export const esIncidenciaAbierta = (estado) => ESTADOS_INCIDENCIA_ABIERTOS.inclu
 export const esIncidenciaResuelta = (estado) => ESTADOS_INCIDENCIA_RESUELTOS.includes(estado)
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// TIPOS DE ERP
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Sistemas ERP soportados por SGM.
+ * 
+ * Estos slugs deben coincidir con:
+ * - Backend: apps/core/constants.py (TipoERP)
+ * - Base de datos: tabla core_erp.slug
+ * 
+ * Uso:
+ *   import { TIPO_ERP } from '@/constants'
+ *   
+ *   if (config.erp.slug === TIPO_ERP.TALANA) { ... }
+ */
+export const TIPO_ERP = Object.freeze({
+  TALANA: 'talana',
+  BUK: 'buk',
+  SAP: 'sap',
+  NUBOX: 'nubox',
+  SOFTLAND: 'softland',
+  GENERIC: 'generic',
+})
+
+/**
+ * ERPs que tienen API para integración directa
+ */
+export const ERPS_CON_API = Object.freeze([
+  TIPO_ERP.TALANA,
+  TIPO_ERP.BUK,
+])
+
+/**
+ * ERPs que solo soportan carga de archivos
+ */
+export const ERPS_SOLO_ARCHIVOS = Object.freeze([
+  TIPO_ERP.SAP,
+  TIPO_ERP.NUBOX,
+  TIPO_ERP.SOFTLAND,
+  TIPO_ERP.GENERIC,
+])
+
+/**
+ * Configuración de badges para ERPs
+ */
+export const TIPO_ERP_BADGE = Object.freeze({
+  [TIPO_ERP.TALANA]: {
+    label: 'Talana',
+    variant: 'primary',
+    color: 'blue',
+  },
+  [TIPO_ERP.BUK]: {
+    label: 'BUK',
+    variant: 'success',
+    color: 'green',
+  },
+  [TIPO_ERP.SAP]: {
+    label: 'SAP',
+    variant: 'warning',
+    color: 'yellow',
+  },
+  [TIPO_ERP.NUBOX]: {
+    label: 'Nubox',
+    variant: 'info',
+    color: 'cyan',
+  },
+  [TIPO_ERP.SOFTLAND]: {
+    label: 'Softland',
+    variant: 'secondary',
+    color: 'gray',
+  },
+  [TIPO_ERP.GENERIC]: {
+    label: 'Genérico',
+    variant: 'secondary',
+    color: 'gray',
+  },
+})
+
+/**
+ * Verifica si un ERP tiene API disponible
+ * @param {string} erpSlug - Slug del ERP
+ * @returns {boolean}
+ */
+export const erpTieneAPI = (erpSlug) => ERPS_CON_API.includes(erpSlug)
+
+/**
+ * Obtiene la configuración de badge para un ERP
+ * @param {string} erpSlug - Slug del ERP
+ * @returns {object}
+ */
+export const getERPBadge = (erpSlug) => TIPO_ERP_BADGE[erpSlug] || TIPO_ERP_BADGE[TIPO_ERP.GENERIC]
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // DEFAULT EXPORT
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -371,4 +464,5 @@ export default {
   ESTADO_INCIDENCIA,
   TIPO_ARCHIVO_ERP,
   TIPO_ARCHIVO_ANALISTA,
+  TIPO_ERP,
 }

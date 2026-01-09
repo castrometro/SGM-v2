@@ -95,3 +95,66 @@ class Permisos:
     CAN_VIEW_EXECUTIVE_DASHBOARD = 'canViewExecutiveDashboard'
     CAN_VIEW_ALL_REPORTS = 'canViewAllReports'
     CAN_VIEW_GLOBAL_REPORTS = 'canViewGlobalReports'
+
+
+class TipoERP:
+    """
+    Slugs de sistemas ERP soportados por SGM.
+    
+    Estos slugs se usan como identificadores para:
+    - El patrón Factory (instanciar estrategias de parseo)
+    - Validar configuraciones de clientes
+    - Consistencia frontend/backend
+    
+    Uso:
+        from apps.core.constants import TipoERP
+        
+        if config.erp.slug == TipoERP.TALANA:
+            ...
+        
+        if TipoERP.tiene_api(erp_slug):
+            ...
+    """
+    TALANA = 'talana'
+    BUK = 'buk'
+    SAP = 'sap'
+    NUBOX = 'nubox'
+    SOFTLAND = 'softland'
+    GENERIC = 'generic'  # Fallback para ERPs sin implementación específica
+    
+    # Choices para campos de modelo Django
+    CHOICES = [
+        (TALANA, 'Talana'),
+        (BUK, 'BUK'),
+        (SAP, 'SAP'),
+        (NUBOX, 'Nubox'),
+        (SOFTLAND, 'Softland'),
+        (GENERIC, 'Genérico'),
+    ]
+    
+    # ERPs con API disponible para integración directa
+    CON_API = [TALANA, BUK]
+    
+    # ERPs que solo soportan carga de archivos
+    SOLO_ARCHIVOS = [SAP, NUBOX, SOFTLAND, GENERIC]
+    
+    # Todos los slugs válidos
+    ALL = [TALANA, BUK, SAP, NUBOX, SOFTLAND, GENERIC]
+    
+    @classmethod
+    def es_valido(cls, slug: str) -> bool:
+        """Verifica si un slug es válido."""
+        return slug in cls.ALL
+    
+    @classmethod
+    def tiene_api(cls, slug: str) -> bool:
+        """Verifica si el ERP tiene API para integración directa."""
+        return slug in cls.CON_API
+    
+    @classmethod
+    def get_nombre_display(cls, slug: str) -> str:
+        """Obtiene el nombre de display para un slug."""
+        for s, nombre in cls.CHOICES:
+            if s == slug:
+                return nombre
+        return slug.upper()
