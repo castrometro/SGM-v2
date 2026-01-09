@@ -23,6 +23,9 @@ class ConceptoLibroSerializer(serializers.ModelSerializer):
             'cliente',
             'erp',
             'header_original',
+            'header_pandas',
+            'ocurrencia',
+            'es_duplicado',
             'header_normalizado',
             'categoria',
             'categoria_display',
@@ -55,6 +58,9 @@ class ConceptoLibroListSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'header_original',
+            'header_pandas',
+            'ocurrencia',
+            'es_duplicado',
             'categoria',
             'categoria_display',
             'es_identificador',
@@ -70,11 +76,13 @@ class ConceptoLibroClasificarSerializer(serializers.Serializer):
     Uso:
         {
             "header": "SUELDO BASE",
+            "ocurrencia": 1,
             "categoria": "haberes_imponibles",
             "es_identificador": false
         }
     """
-    header = serializers.CharField(max_length=200)
+    header = serializers.CharField(max_length=200, help_text="Nombre del header (puede ser header_pandas)")
+    ocurrencia = serializers.IntegerField(default=1, help_text="Número de ocurrencia si es duplicado")
     categoria = serializers.ChoiceField(
         choices=CategoriaConceptoLibro.CHOICES,
         allow_null=True,
