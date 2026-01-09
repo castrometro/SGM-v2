@@ -165,6 +165,125 @@ class TipoArchivoERP:
         return valor in cls.ALL
 
 
+class EstadoArchivoLibro:
+    """
+    Estados específicos para el procesamiento del Libro de Remuneraciones.
+    
+    Flujo:
+        SUBIDO → EXTRAYENDO_HEADERS → PENDIENTE_CLASIFICACION → 
+        LISTO → PROCESANDO → PROCESADO
+                                                      ↓
+                                                    ERROR
+    """
+    SUBIDO = 'subido'
+    EXTRAYENDO_HEADERS = 'extrayendo_headers'
+    PENDIENTE_CLASIFICACION = 'pendiente_clasificacion'
+    LISTO = 'listo'
+    PROCESANDO = 'procesando'
+    PROCESADO = 'procesado'
+    ERROR = 'error'
+    
+    CHOICES = [
+        (SUBIDO, 'Subido'),
+        (EXTRAYENDO_HEADERS, 'Extrayendo Headers'),
+        (PENDIENTE_CLASIFICACION, 'Pendiente Clasificación'),
+        (LISTO, 'Listo para Procesar'),
+        (PROCESANDO, 'Procesando'),
+        (PROCESADO, 'Procesado'),
+        (ERROR, 'Error'),
+    ]
+    
+    # Estados que permiten extracción de headers
+    ESTADOS_PUEDE_EXTRAER_HEADERS = [SUBIDO]
+    
+    # Estados que permiten clasificación
+    ESTADOS_PUEDE_CLASIFICAR = [PENDIENTE_CLASIFICACION, LISTO]
+    
+    # Estados que permiten procesamiento
+    ESTADOS_PUEDE_PROCESAR = [LISTO]
+    
+    # Estados en proceso (no terminados)
+    ESTADOS_EN_PROCESO = [EXTRAYENDO_HEADERS, PROCESANDO]
+    
+    ALL = [
+        SUBIDO, EXTRAYENDO_HEADERS, PENDIENTE_CLASIFICACION,
+        LISTO, PROCESANDO, PROCESADO, ERROR
+    ]
+    
+    @classmethod
+    def es_valido(cls, valor):
+        return valor in cls.ALL
+    
+    @classmethod
+    def puede_extraer_headers(cls, estado):
+        return estado in cls.ESTADOS_PUEDE_EXTRAER_HEADERS
+    
+    @classmethod
+    def puede_clasificar(cls, estado):
+        return estado in cls.ESTADOS_PUEDE_CLASIFICAR
+    
+    @classmethod
+    def puede_procesar(cls, estado):
+        return estado in cls.ESTADOS_PUEDE_PROCESAR
+
+
+class CategoriaConceptoLibro:
+    """
+    Categorías para clasificar conceptos del Libro de Remuneraciones.
+    """
+    HABERES_IMPONIBLES = 'haberes_imponibles'
+    HABERES_NO_IMPONIBLES = 'haberes_no_imponibles'
+    DESCUENTOS_LEGALES = 'descuentos_legales'
+    OTROS_DESCUENTOS = 'otros_descuentos'
+    APORTES_PATRONALES = 'aportes_patronales'
+    INFO_ADICIONAL = 'info_adicional'
+    IDENTIFICADOR = 'identificador'
+    IGNORAR = 'ignorar'
+    
+    CHOICES = [
+        (HABERES_IMPONIBLES, 'Haberes Imponibles'),
+        (HABERES_NO_IMPONIBLES, 'Haberes No Imponibles'),
+        (DESCUENTOS_LEGALES, 'Descuentos Legales'),
+        (OTROS_DESCUENTOS, 'Otros Descuentos'),
+        (APORTES_PATRONALES, 'Aportes Patronales'),
+        (INFO_ADICIONAL, 'Información Adicional'),
+        (IDENTIFICADOR, 'Identificador (RUT, etc.)'),
+        (IGNORAR, 'Ignorar'),
+    ]
+    
+    # Categorías que se suman para calcular totales
+    CATEGORIAS_MONETARIAS = [
+        HABERES_IMPONIBLES,
+        HABERES_NO_IMPONIBLES,
+        DESCUENTOS_LEGALES,
+        OTROS_DESCUENTOS,
+        APORTES_PATRONALES,
+    ]
+    
+    # Categorías que no se procesan
+    CATEGORIAS_NO_MONETARIAS = [
+        INFO_ADICIONAL,
+        IDENTIFICADOR,
+        IGNORAR,
+    ]
+    
+    ALL = [
+        HABERES_IMPONIBLES, HABERES_NO_IMPONIBLES,
+        DESCUENTOS_LEGALES, OTROS_DESCUENTOS,
+        APORTES_PATRONALES, INFO_ADICIONAL,
+        IDENTIFICADOR, IGNORAR
+    ]
+    
+    @classmethod
+    def es_valido(cls, valor):
+        return valor in cls.ALL
+    
+    @classmethod
+    def es_monetaria(cls, categoria):
+        return categoria in cls.CATEGORIAS_MONETARIAS
+
+
+
 class TipoArchivoAnalista:
     """Tipos de archivos cargados por el analista."""
     NOVEDADES = 'novedades'

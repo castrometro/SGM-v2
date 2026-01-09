@@ -32,6 +32,17 @@ class ArchivoBase(models.Model):
         ('error', 'Error'),
     ]
     
+    # Estados específicos para Libro de Remuneraciones
+    ESTADO_LIBRO_CHOICES = [
+        ('subido', 'Subido'),
+        ('extrayendo_headers', 'Extrayendo Headers'),
+        ('pendiente_clasificacion', 'Pendiente Clasificación'),
+        ('listo', 'Listo para Procesar'),
+        ('procesando', 'Procesando'),
+        ('procesado', 'Procesado'),
+        ('error', 'Error'),
+    ]
+    
     archivo = models.FileField(upload_to=archivo_upload_path)
     nombre_original = models.CharField(max_length=255)
     
@@ -97,6 +108,33 @@ class ArchivoERP(ArchivoBase):
         help_text='Lista de hojas encontradas en el Excel (para Movimientos)'
     )
     
+    # Campos específicos para Libro de Remuneraciones
+    headers_total = models.PositiveIntegerField(
+        default=0,
+        help_text='Total de headers encontrados en el libro'
+    )
+    
+    headers_clasificados = models.PositiveIntegerField(
+        default=0,
+        help_text='Cantidad de headers ya clasificados'
+    )
+    
+    empleados_procesados = models.PositiveIntegerField(
+        default=0,
+        help_text='Cantidad de empleados procesados del libro'
+    )
+    
+    error_mensaje = models.TextField(
+        blank=True,
+        help_text='Mensaje de error si el procesamiento falló'
+    )
+    
+    task_id = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text='ID de la tarea Celery en ejecución'
+    )
+    
     # Versión del archivo (para re-subidas)
     version = models.PositiveIntegerField(default=1)
     es_version_actual = models.BooleanField(default=True)
@@ -123,6 +161,35 @@ class ArchivoERP(ArchivoBase):
             self.version = ultima_version + 1
         
         super().save(*args, **kwargs)
+    
+    @property
+    def es_libro_remuneraciones(self):
+        """Retorna True si es archivo de Libro de Remuneraciones."""
+        return self.tipo == 'libro_remuneraciones'
+    
+    @property
+    def todos_headers_clasificados(self):
+        """Retorna True si todos los headers están clasificados."""
+        if self.headers_total == 0:
+            return False
+        return self.headers_clasificados >= self.headers_total
+    
+    @property
+    def progreso_clasificacion(self):
+        """Retorna porcentaje de clasificación (0-100)."""
+        if self.headers_total == 0:
+            return 0
+        return int((self.headers_clasificados / self.headers_total) * 100)
+    
+    @property
+    def progreso_procesamiento(self):
+        """Retorna dict con info de progreso del procesamiento."""
+        return {
+            'empleados_procesados': self.empleados_procesados,
+            'estado': self.estado,
+            'task_id': self.task_id,
+        }
+
 
 
 class ArchivoAnalista(ArchivoBase):
