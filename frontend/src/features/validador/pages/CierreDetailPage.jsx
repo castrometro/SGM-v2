@@ -53,7 +53,7 @@ const CierreDetailPage = () => {
   const renderStepContent = () => {
     switch (cierre.estado) {
       case 'carga_archivos':
-        return <CargaArchivos cierreId={id} />
+        return <CargaArchivos cierreId={id} clienteErp={cierre.cliente_erp} />
       
       case 'clasificacion':
         return (
@@ -160,9 +160,14 @@ const CierreDetailPage = () => {
           <ArrowLeft className="h-5 w-5 text-secondary-400" />
         </button>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold text-secondary-100">
-            {cierre.cliente_nombre}
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-secondary-100">
+              {cierre.cliente_nombre}
+            </h1>
+            <code className="text-sm bg-secondary-800 px-2 py-0.5 rounded text-secondary-300">
+              {cierre.cliente_rut}
+            </code>
+          </div>
           <p className="text-secondary-400 mt-1">
             {cierre.mes_nombre} {cierre.anio}
           </p>

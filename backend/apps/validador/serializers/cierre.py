@@ -42,6 +42,8 @@ class CierreDetailSerializer(serializers.ModelSerializer):
     """Serializer detallado de un cierre."""
     
     cliente_nombre = serializers.CharField(source='cliente.nombre_display', read_only=True)
+    cliente_rut = serializers.CharField(source='cliente.rut', read_only=True)
+    cliente_erp = serializers.SerializerMethodField()
     analista_nombre = serializers.CharField(source='analista.get_full_name', read_only=True)
     estado_display = serializers.CharField(source='get_estado_display', read_only=True)
     archivos_erp_count = serializers.SerializerMethodField()
@@ -52,7 +54,7 @@ class CierreDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Cierre
         fields = [
-            'id', 'cliente', 'cliente_nombre', 'periodo',
+            'id', 'cliente', 'cliente_nombre', 'cliente_rut', 'cliente_erp', 'periodo',
             'estado', 'estado_display', 'analista', 'analista_nombre',
             'total_discrepancias', 'discrepancias_resueltas',
             'total_incidencias', 'incidencias_aprobadas',
@@ -63,6 +65,17 @@ class CierreDetailSerializer(serializers.ModelSerializer):
             'fecha_consolidacion', 'fecha_finalizacion',
             'observaciones',
         ]
+    
+    def get_cliente_erp(self, obj):
+        """Retorna información del ERP activo del cliente."""
+        config = obj.cliente.configuraciones_erp.filter(activo=True).first()
+        if config:
+            return {
+                'id': config.erp.id,
+                'nombre': config.erp.nombre,
+                'slug': config.erp.slug,
+            }
+        return None
     
     def get_archivos_erp_count(self, obj):
         return obj.archivos_erp.filter(es_version_actual=True).count()

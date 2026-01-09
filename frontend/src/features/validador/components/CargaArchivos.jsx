@@ -13,7 +13,8 @@ import {
   Loader2, 
   Trash2,
   RefreshCw,
-  FileCheck
+  FileCheck,
+  Database
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui'
 import Badge from '../../../components/ui/Badge'
@@ -227,7 +228,7 @@ const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUpl
 /**
  * Componente principal de Carga de Archivos
  */
-const CargaArchivos = ({ cierreId }) => {
+const CargaArchivos = ({ cierreId, clienteErp = null }) => {
   // Estados locales para progreso de subida
   const [uploadingERP, setUploadingERP] = useState({})
   const [uploadingAnalista, setUploadingAnalista] = useState({})
@@ -350,12 +351,28 @@ const CargaArchivos = ({ cierreId }) => {
         {/* Archivos ERP */}
         <Card>
           <CardHeader>
-            <div className="flex items-center gap-2">
-              <FileSpreadsheet className="h-5 w-5 text-primary-400" />
-              <CardTitle>Archivos del ERP</CardTitle>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5 text-primary-400" />
+                <CardTitle>Archivos del ERP</CardTitle>
+              </div>
+              {clienteErp ? (
+                <Badge variant="info" className="flex items-center gap-1.5">
+                  <Database className="h-3.5 w-3.5" />
+                  {clienteErp.nombre}
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="flex items-center gap-1.5">
+                  <Database className="h-3.5 w-3.5" />
+                  Sin ERP
+                </Badge>
+              )}
             </div>
             <p className="text-sm text-secondary-400 mt-1">
-              Archivos generados desde el sistema de nómina (Talana, BUK, Rex+)
+              {clienteErp 
+                ? `Archivos generados desde ${clienteErp.nombre}`
+                : 'Archivos generados desde el sistema de nómina'
+              }
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
