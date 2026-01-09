@@ -40,6 +40,7 @@ from .cierre_service import CierreService
 from .archivo_service import ArchivoService
 from .incidencia_service import IncidenciaService
 from .equipo_service import EquipoService
+from .libro_service import LibroService
 
 # ERP Factory/Strategy
 from .erp import ERPFactory, ERPStrategy, ParseResult, FormatoEsperado
@@ -55,6 +56,7 @@ __all__ = [
     'ArchivoService',
     'IncidenciaService',
     'EquipoService',
+    'LibroService',
     
     # ERP Factory/Strategy
     'ERPFactory',

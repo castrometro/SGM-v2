@@ -9,6 +9,7 @@ from .concepto import (
     ConceptoClienteViewSet,
     MapeoItemNovedadesViewSet,
 )
+from .libro import LibroViewSet
 from .discrepancia import DiscrepanciaViewSet
 from .incidencia import IncidenciaViewSet, ComentarioIncidenciaViewSet
 from .dashboard import DashboardViewSet, ResumenConsolidadoViewSet
@@ -20,6 +21,7 @@ __all__ = [
     'CategoriaConceptoViewSet',
     'ConceptoClienteViewSet',
     'MapeoItemNovedadesViewSet',
+    'LibroViewSet',
     'DiscrepanciaViewSet',
     'IncidenciaViewSet',
     'ComentarioIncidenciaViewSet',

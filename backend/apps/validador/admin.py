@@ -9,8 +9,10 @@ from .models import (
     ArchivoAnalista,
     CategoriaConcepto,
     ConceptoCliente,
+    ConceptoLibro,
     MapeoItemNovedades,
     EmpleadoCierre,
+    EmpleadoLibro,
     Discrepancia,
     Incidencia,
     ComentarioIncidencia,
@@ -101,6 +103,35 @@ class ConceptoClienteAdmin(admin.ModelAdmin):
     list_editable = ['categoria', 'ignorar_en_comparacion']
 
 
+@admin.register(ConceptoLibro)
+class ConceptoLibroAdmin(admin.ModelAdmin):
+    list_display = [
+        'header_original', 'cliente', 'erp', 'categoria',
+        'es_identificador', 'orden', 'activo'
+    ]
+    list_filter = ['cliente', 'erp', 'categoria', 'activo', 'es_identificador']
+    search_fields = ['header_original', 'header_normalizado', 'cliente__nombre_legal']
+    raw_id_fields = ['cliente', 'erp', 'creado_por']
+    list_editable = ['categoria', 'orden']
+    readonly_fields = ['header_normalizado', 'fecha_creacion', 'fecha_actualizacion']
+    
+    fieldsets = (
+        (None, {
+            'fields': ('cliente', 'erp', 'header_original', 'header_normalizado')
+        }),
+        ('Clasificación', {
+            'fields': ('categoria', 'es_identificador', 'orden')
+        }),
+        ('Estado', {
+            'fields': ('activo', 'creado_por')
+        }),
+        ('Timestamps', {
+            'fields': ('fecha_creacion', 'fecha_actualizacion'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
 @admin.register(MapeoItemNovedades)
 class MapeoItemNovedadesAdmin(admin.ModelAdmin):
     list_display = ['nombre_novedades', 'concepto_erp', 'cliente', 'fecha_mapeo']
@@ -115,6 +146,42 @@ class EmpleadoCierreAdmin(admin.ModelAdmin):
     list_filter = ['cierre__cliente', 'cierre__periodo']
     search_fields = ['rut', 'nombre']
     raw_id_fields = ['cierre']
+
+
+@admin.register(EmpleadoLibro)
+class EmpleadoLibroAdmin(admin.ModelAdmin):
+    list_display = [
+        'rut', 'nombre', 'cierre', 'archivo_erp',
+        'total_haberes_imponibles', 'total_liquido'
+    ]
+    list_filter = ['cierre__cliente', 'cierre__periodo', 'archivo_erp__tipo']
+    search_fields = ['rut', 'nombre']
+    raw_id_fields = ['cierre', 'archivo_erp']
+    readonly_fields = ['fecha_creacion']
+    
+    fieldsets = (
+        ('Identificación', {
+            'fields': ('cierre', 'archivo_erp', 'rut', 'nombre')
+        }),
+        ('Datos Adicionales', {
+            'fields': ('cargo', 'centro_costo', 'area', 'fecha_ingreso'),
+            'classes': ('collapse',)
+        }),
+        ('Detalle JSON', {
+            'fields': ('datos_json',)
+        }),
+        ('Totales', {
+            'fields': (
+                'total_haberes_imponibles', 'total_haberes_no_imponibles',
+                'total_descuentos_legales', 'total_otros_descuentos',
+                'total_aportes_patronales', 'total_liquido'
+            )
+        }),
+        ('Timestamps', {
+            'fields': ('fecha_creacion',),
+            'classes': ('collapse',)
+        }),
+    )
 
 
 @admin.register(Discrepancia)
