@@ -52,6 +52,25 @@ class ConceptoLibro(models.Model):
         help_text='Nombre exacto como aparece en el Excel (ej: "SUELDO BASE", "AFP")'
     )
     
+    # Header como lo lee pandas (puede tener .1, .2 para duplicados)
+    header_pandas = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text='Nombre como pandas lo lee (ej: "BONO.1" para el segundo BONO)'
+    )
+    
+    # Número de ocurrencia si es duplicado
+    ocurrencia = models.PositiveIntegerField(
+        default=1,
+        help_text='Número de ocurrencia si el header está duplicado (1, 2, 3...)'
+    )
+    
+    # Si este header está duplicado
+    es_duplicado = models.BooleanField(
+        default=False,
+        help_text='True si este header aparece múltiples veces en el Excel'
+    )
+    
     # Header normalizado para matching
     header_normalizado = models.SlugField(
         max_length=200,
@@ -99,18 +118,20 @@ class ConceptoLibro(models.Model):
         verbose_name = 'Concepto Libro'
         verbose_name_plural = 'Conceptos Libro'
         unique_together = [
-            ['cliente', 'erp', 'header_original'],
+            ['cliente', 'erp', 'header_original', 'ocurrencia'],
         ]
-        ordering = ['cliente', 'erp', 'orden', 'header_original']
+        ordering = ['cliente', 'erp', 'orden', 'header_original', 'ocurrencia']
         indexes = [
             models.Index(fields=['cliente', 'erp']),
             models.Index(fields=['cliente', 'erp', 'header_normalizado']),
             models.Index(fields=['categoria']),
+            models.Index(fields=['cliente', 'erp', 'header_pandas']),
         ]
     
     def __str__(self):
         cat_display = self.get_categoria_display() if self.categoria else 'Sin clasificar'
-        return f"{self.header_original} ({cat_display})"
+        suffix = f" (#{self.ocurrencia})" if self.es_duplicado else ""
+        return f"{self.header_original}{suffix} ({cat_display})"
     
     def save(self, *args, **kwargs):
         """Auto-generar header normalizado al guardar."""

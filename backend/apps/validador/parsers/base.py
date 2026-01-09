@@ -14,6 +14,23 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class HeaderInfo:
+    """
+    Información de un header del Excel.
+    
+    Attributes:
+        original: Nombre original del header antes de ser procesado por pandas
+        pandas_name: Nombre como lo lee pandas (puede tener .1, .2 para duplicados)
+        occurrence: Número de ocurrencia si es duplicado (1, 2, 3...)
+        is_duplicate: True si este header está duplicado en el archivo
+    """
+    original: str
+    pandas_name: str
+    occurrence: int = 1
+    is_duplicate: bool = False
+
+
+@dataclass
 class ProcessResult:
     """
     Resultado del procesamiento del libro.
@@ -22,6 +39,7 @@ class ProcessResult:
         success: True si el procesamiento fue exitoso
         data: Lista de diccionarios con datos de empleados
         headers: Lista de headers encontrados en el archivo
+        headers_info: Lista de HeaderInfo con detalles de cada header
         error: Mensaje de error si hubo falla
         warnings: Lista de advertencias
         metadata: Información adicional del procesamiento
@@ -29,6 +47,7 @@ class ProcessResult:
     success: bool
     data: Optional[List[Dict]] = None
     headers: Optional[List[str]] = None
+    headers_info: Optional[List[HeaderInfo]] = None
     error: Optional[str] = None
     warnings: Optional[List[str]] = None
     metadata: Optional[Dict] = None
@@ -38,18 +57,22 @@ class ProcessResult:
             self.data = []
         if self.headers is None:
             self.headers = []
+        if self.headers_info is None:
+            self.headers_info = []
         if self.warnings is None:
             self.warnings = []
         if self.metadata is None:
             self.metadata = {}
     
     @classmethod
-    def ok(cls, data: List[Dict], headers: List[str], warnings: List[str] = None, metadata: Dict = None):
+    def ok(cls, data: List[Dict], headers: List[str], headers_info: List['HeaderInfo'] = None, 
+           warnings: List[str] = None, metadata: Dict = None):
         """Crea un resultado exitoso."""
         return cls(
             success=True,
             data=data,
             headers=headers,
+            headers_info=headers_info or [],
             warnings=warnings or [],
             metadata=metadata or {}
         )
@@ -247,6 +270,69 @@ class BaseLibroParser(ABC):
             header=header,
             skiprows=skiprows
         )
+    
+    def analizar_headers_duplicados(self, df_columns) -> List[HeaderInfo]:
+        """
+        Analiza las columnas del DataFrame para detectar headers duplicados.
+        
+        Pandas automáticamente renombra headers duplicados agregando .1, .2, etc.
+        Esta función detecta esos casos y genera HeaderInfo para cada columna.
+        
+        Args:
+            df_columns: Columnas del DataFrame (df.columns)
+        
+        Returns:
+            Lista de HeaderInfo con información de cada header
+        """
+        headers_info = []
+        seen_originals = {}  # {original: count}
+        
+        for col in df_columns:
+            col_str = str(col).strip()
+            
+            # Ignorar columnas sin nombre
+            if col_str.startswith('Unnamed'):
+                continue
+            
+            # Detectar si pandas agregó sufijo .N para duplicados
+            original = col_str
+            occurrence = 1
+            is_duplicate = False
+            
+            # Pandas agrega .1, .2, .3 para duplicados
+            import re
+            match = re.match(r'^(.+)\.(\d+)$', col_str)
+            if match:
+                original = match.group(1)
+                occurrence = int(match.group(2)) + 1  # .1 es la segunda ocurrencia
+                is_duplicate = True
+            
+            # Actualizar contador de originales
+            if original not in seen_originals:
+                seen_originals[original] = 0
+            seen_originals[original] += 1
+            
+            # Si es la primera vez que vemos este original pero ya hay .1, es duplicado
+            if not is_duplicate and occurrence == 1:
+                # Verificar si existe una versión .1 más adelante
+                for future_col in df_columns:
+                    if str(future_col).startswith(f"{original}."):
+                        is_duplicate = True
+                        break
+            
+            headers_info.append(HeaderInfo(
+                original=original,
+                pandas_name=col_str,
+                occurrence=occurrence,
+                is_duplicate=is_duplicate
+            ))
+        
+        # Segunda pasada: marcar todos los originales que tienen duplicados
+        for info in headers_info:
+            if seen_originals.get(info.original, 0) > 1:
+                info.is_duplicate = True
+        
+        return headers_info
     
     def calcular_totales_por_categoria(self, datos_json: Dict) -> Dict:
         """
