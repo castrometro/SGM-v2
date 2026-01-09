@@ -12,7 +12,7 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
-from apps.core.models import Cliente, Industria, Usuario
+from apps.core.models import Cliente, Industria, Usuario, ERP, ConfiguracionERPCliente
 from apps.core.constants import TipoUsuario
 from apps.core.serializers import (
     ClienteSerializer,
@@ -72,7 +72,13 @@ class ClienteViewSet(viewsets.ModelViewSet):
         - Analista: solo clientes asignados a él
         """
         user = self.request.user
-        queryset = Cliente.objects.select_related('industria', 'usuario_asignado')
+        queryset = Cliente.objects.select_related(
+            'industria', 
+            'usuario_asignado'
+        ).prefetch_related(
+            'configuraciones_erp',
+            'configuraciones_erp__erp'
+        )
         
         # Gerentes ven todos los clientes
         if user.tipo_usuario == TipoUsuario.GERENTE:
@@ -366,5 +372,63 @@ class ClienteViewSet(viewsets.ModelViewSet):
             'usuario_nuevo': {
                 'id': nuevo_usuario.id,
                 'nombre': nuevo_usuario.get_full_name(),
+            }
+        })
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsGerente])
+    def asignar_erp(self, request, pk=None):
+        """
+        Asigna o cambia el ERP activo de un cliente.
+        Solo para gerentes.
+        
+        Body:
+            erp_id: ID del ERP a asignar (null para quitar asignación)
+        """
+        cliente = self.get_object()
+        erp_id = request.data.get('erp_id')
+        
+        if erp_id is None:
+            # Desactivar configuración actual
+            ConfiguracionERPCliente.objects.filter(
+                cliente=cliente,
+                activo=True
+            ).update(activo=False)
+            
+            return Response({
+                'mensaje': 'ERP desasignado del cliente',
+                'erp_activo': None
+            })
+        
+        # Validar que el ERP existe y está activo
+        try:
+            erp = ERP.objects.get(id=erp_id, activo=True)
+        except ERP.DoesNotExist:
+            return Response(
+                {'error': 'ERP no encontrado o no está activo'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Desactivar configuración actual si existe
+        ConfiguracionERPCliente.objects.filter(
+            cliente=cliente,
+            activo=True
+        ).update(activo=False)
+        
+        # Crear o actualizar configuración para el nuevo ERP
+        config, created = ConfiguracionERPCliente.objects.update_or_create(
+            cliente=cliente,
+            erp=erp,
+            defaults={
+                'activo': True,
+                'fecha_activacion': timezone.now().date(),
+            }
+        )
+        
+        return Response({
+            'mensaje': f'ERP {erp.nombre} asignado correctamente',
+            'erp_activo': {
+                'id': erp.id,
+                'nombre': erp.nombre,
+                'slug': erp.slug,
             }
         })

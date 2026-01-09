@@ -12,7 +12,9 @@ from typing import Optional, Dict, Any, List
 
 from .base import BaseService, ServiceResult
 from ..models import Cierre
+from ..constants import EstadoCierre, EstadoIncidencia
 from apps.core.models import Usuario, Cliente
+from apps.core.constants import TipoUsuario
 
 
 class EquipoService(BaseService):
@@ -36,10 +38,10 @@ class EquipoService(BaseService):
         Returns:
             Lista de analistas con estadísticas básicas
         """
-        if supervisor.tipo_usuario == 'gerente':
+        if supervisor.tipo_usuario == TipoUsuario.GERENTE:
             # Gerente ve todos los analistas
             analistas = Usuario.objects.filter(
-                tipo_usuario='analista',
+                tipo_usuario=TipoUsuario.ANALISTA,
                 is_active=True
             )
         else:
@@ -56,7 +58,7 @@ class EquipoService(BaseService):
             cierres_activos = Cierre.objects.filter(
                 analista=analista
             ).exclude(
-                estado__in=['finalizado', 'cancelado']
+                estado__in=EstadoCierre.ESTADOS_FINALES
             )
             
             resultado.append({
@@ -85,9 +87,9 @@ class EquipoService(BaseService):
         logger = cls.get_logger()
         
         try:
-            if supervisor.tipo_usuario == 'gerente':
+            if supervisor.tipo_usuario == TipoUsuario.GERENTE:
                 analistas = Usuario.objects.filter(
-                    tipo_usuario='analista',
+                    tipo_usuario=TipoUsuario.ANALISTA,
                     is_active=True
                 )
             else:
@@ -117,7 +119,7 @@ class EquipoService(BaseService):
                     
                     if cierre:
                         # Aplicar filtro de activos si corresponde
-                        if solo_activos and cierre.estado in ['finalizado', 'cancelado']:
+                        if solo_activos and cierre.estado in EstadoCierre.ESTADOS_FINALES:
                             continue
                         
                         cierres.append({
@@ -131,15 +133,12 @@ class EquipoService(BaseService):
                             'estado': cierre.estado,
                             'estado_display': cierre.get_estado_display(),
                             'fecha_creacion': cierre.fecha_creacion,
-                            'requiere_atencion': cierre.estado in [
-                                'deteccion_incidencias',
-                                'revision_incidencias'
-                            ],
+                            'requiere_atencion': cierre.estado in EstadoCierre.ESTADOS_REQUIEREN_ATENCION,
                         })
                         
                         # Actualizar estadísticas
                         estadisticas['total_cierres'] += 1
-                        if cierre.estado not in ['finalizado', 'cancelado']:
+                        if cierre.estado not in EstadoCierre.ESTADOS_FINALES:
                             estadisticas['cierres_en_proceso'] += 1
                         if cierre.estado in ['revision_incidencias', 'deteccion_incidencias']:
                             estadisticas['cierres_pendientes_revision'] += 1
@@ -171,9 +170,9 @@ class EquipoService(BaseService):
         """
         Obtener estadísticas completas del equipo.
         """
-        if supervisor.tipo_usuario == 'gerente':
+        if supervisor.tipo_usuario == TipoUsuario.GERENTE:
             analistas = Usuario.objects.filter(
-                tipo_usuario='analista',
+                tipo_usuario=TipoUsuario.ANALISTA,
                 is_active=True
             )
         else:
@@ -219,7 +218,7 @@ class EquipoService(BaseService):
                     for item in cierres_por_estado
                 },
                 'en_proceso': cierres.exclude(
-                    estado__in=['finalizado', 'cancelado']
+                    estado__in=EstadoCierre.ESTADOS_FINALES
                 ).count(),
             },
             'incidencias': {
@@ -229,7 +228,7 @@ class EquipoService(BaseService):
                     for item in incidencias_por_estado
                 },
                 'pendientes': incidencias.filter(
-                    estado__in=['pendiente', 'en_revision']
+                    estado__in=EstadoIncidencia.ESTADOS_ABIERTOS
                 ).count(),
             },
         }
@@ -246,10 +245,10 @@ class EquipoService(BaseService):
         """
         logger = cls.get_logger()
         
-        if analista.tipo_usuario != 'analista':
+        if analista.tipo_usuario != TipoUsuario.ANALISTA:
             return ServiceResult.fail('El usuario debe ser analista')
         
-        if supervisor.tipo_usuario not in ['supervisor', 'senior']:
+        if supervisor.tipo_usuario not in TipoUsuario.PUEDEN_SER_SUPERVISORES:
             return ServiceResult.fail('El supervisor debe ser de tipo supervisor o senior')
         
         try:

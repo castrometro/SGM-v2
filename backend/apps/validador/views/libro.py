@@ -20,6 +20,7 @@ from apps.validador.serializers import (
     ProgresoLibroSerializer,
 )
 from apps.validador.services import LibroService
+from apps.validador.constants import EstadoArchivoLibro
 from apps.validador.tasks import (
     extraer_headers_libro,
     procesar_libro_remuneraciones,
@@ -235,7 +236,7 @@ class LibroViewSet(viewsets.ViewSet):
         # Si no hay progreso en cache, retornar estado del archivo
         return Response({
             'estado': archivo_erp.estado,
-            'progreso': 100 if archivo_erp.estado == 'procesado' else 0,
+            'progreso': 100 if archivo_erp.estado == EstadoArchivoLibro.PROCESADO else 0,
             'empleados_procesados': archivo_erp.empleados_procesados,
             'mensaje': f'Estado: {archivo_erp.get_estado_display()}'
         })

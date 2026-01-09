@@ -23,6 +23,8 @@ from ..serializers import (
     CierreCreateSerializer,
 )
 from ..services import CierreService, EquipoService
+from ..constants import EstadoCierre
+from apps.core.constants import TipoUsuario
 from shared.permissions import IsAnalista, IsSupervisor
 
 
@@ -47,15 +49,15 @@ class CierreViewSet(viewsets.ModelViewSet):
         # Filtrar según tipo de usuario
         # Todos ven SOLO sus cierres directos (donde son el analista asignado)
         # Para ver cierres del equipo, usar acción específica cierres_equipo
-        if user.tipo_usuario in ['analista', 'supervisor']:
+        if user.tipo_usuario == TipoUsuario.ANALISTA:
             queryset = queryset.filter(analista=user)
-        elif user.tipo_usuario == 'senior':
-            # Senior ve sus cierres y los de su equipo
+        elif user.tipo_usuario == TipoUsuario.SUPERVISOR:
+            # Supervisor ve sus cierres y los de sus supervisados
             queryset = queryset.filter(
                 Q(analista=user) | 
-                Q(analista__in=user.supervisados.all())
+                Q(analista__in=user.analistas_supervisados.all())
             )
-        # gerente ve todo
+        # TipoUsuario.GERENTE ve todo
         
         # Filtros opcionales
         cliente_id = self.request.query_params.get('cliente')
@@ -131,9 +133,9 @@ class CierreViewSet(viewsets.ModelViewSet):
         cierre_actualizado = result.data
         mensaje = 'Cierre consolidado'
         
-        if cierre_actualizado.estado == 'finalizado':
+        if cierre_actualizado.estado == EstadoCierre.FINALIZADO:
             mensaje = 'Cierre consolidado y finalizado (primer cierre del cliente)'
-        elif cierre_actualizado.estado == 'deteccion_incidencias':
+        elif cierre_actualizado.estado == EstadoCierre.DETECCION_INCIDENCIAS:
             mensaje = 'Cierre consolidado. Detectando incidencias...'
         
         return Response({

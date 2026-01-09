@@ -29,6 +29,7 @@ class ClienteSerializer(serializers.ModelSerializer):
     nombre_display = serializers.CharField(read_only=True)
     usuario_asignado_info = serializers.SerializerMethodField()
     supervisor_heredado_info = serializers.SerializerMethodField()
+    erp_activo = serializers.SerializerMethodField()
     
     class Meta:
         model = Cliente
@@ -43,6 +44,7 @@ class ClienteSerializer(serializers.ModelSerializer):
             'usuario_asignado',
             'usuario_asignado_info',
             'supervisor_heredado_info',
+            'erp_activo',
             'bilingue',
             'activo',
             'fecha_registro',
@@ -70,6 +72,25 @@ class ClienteSerializer(serializers.ModelSerializer):
                 'email': supervisor.email,
             }
         return None
+    
+    def get_erp_activo(self, obj):
+        """Retorna información del ERP activo del cliente."""
+        # Usar la caché del prefetch_related si existe
+        configs = getattr(obj, '_prefetched_objects_cache', {}).get('configuraciones_erp')
+        if configs is not None:
+            # Filtrar en memoria (ya está prefetched)
+            config = next((c for c in configs if c.activo), None)
+        else:
+            # Fallback: hacer query
+            config = obj.configuraciones_erp.filter(activo=True).first()
+        
+        if config:
+            return {
+                'id': config.erp.id,
+                'nombre': config.erp.nombre,
+                'slug': config.erp.slug,
+            }
+        return None
 
 
 class ClienteDetailSerializer(serializers.ModelSerializer):
@@ -80,6 +101,7 @@ class ClienteDetailSerializer(serializers.ModelSerializer):
     servicios_activos = serializers.SerializerMethodField()
     usuario_asignado_info = serializers.SerializerMethodField()
     supervisor_heredado_info = serializers.SerializerMethodField()
+    erp_activo = serializers.SerializerMethodField()
     
     class Meta:
         model = Cliente
@@ -93,6 +115,7 @@ class ClienteDetailSerializer(serializers.ModelSerializer):
             'usuario_asignado',
             'usuario_asignado_info',
             'supervisor_heredado_info',
+            'erp_activo',
             'bilingue',
             'contacto_nombre',
             'contacto_email',
@@ -129,6 +152,25 @@ class ClienteDetailSerializer(serializers.ModelSerializer):
                 'id': supervisor.id,
                 'nombre': supervisor.get_full_name(),
                 'email': supervisor.email,
+            }
+        return None
+    
+    def get_erp_activo(self, obj):
+        """Retorna información del ERP activo del cliente."""
+        # Usar la caché del prefetch_related si existe
+        configs = getattr(obj, '_prefetched_objects_cache', {}).get('configuraciones_erp')
+        if configs is not None:
+            # Filtrar en memoria (ya está prefetched)
+            config = next((c for c in configs if c.activo), None)
+        else:
+            # Fallback: hacer query
+            config = obj.configuraciones_erp.filter(activo=True).first()
+        
+        if config:
+            return {
+                'id': config.erp.id,
+                'nombre': config.erp.nombre,
+                'slug': config.erp.slug,
             }
         return None
 

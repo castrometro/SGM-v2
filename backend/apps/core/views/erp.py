@@ -18,6 +18,7 @@ from apps.core.serializers import (
     ConfiguracionERPClienteDetailSerializer,
     ConfiguracionERPClienteCreateSerializer,
 )
+from apps.core.constants import TipoUsuario
 from shared.permissions import IsGerente, IsSupervisor
 
 
@@ -112,11 +113,11 @@ class ConfiguracionERPClienteViewSet(viewsets.ModelViewSet):
         )
         
         # Gerentes ven todas las configuraciones
-        if user.tipo_usuario == 'gerente':
+        if user.tipo_usuario == TipoUsuario.GERENTE:
             return queryset
         
         # Supervisores ven configuraciones de sus clientes
-        if user.tipo_usuario == 'supervisor':
+        if user.tipo_usuario == TipoUsuario.SUPERVISOR:
             from django.db.models import Q
             return queryset.filter(
                 Q(cliente__usuario_asignado=user) | 

@@ -3,6 +3,7 @@ Modelos de Cliente e Industria para SGM v2.
 """
 
 from django.db import models
+from ..constants import TipoUsuario
 
 
 class Industria(models.Model):
@@ -74,7 +75,7 @@ class Cliente(models.Model):
         null=True,
         blank=True,
         related_name='clientes_asignados',
-        limit_choices_to={'tipo_usuario__in': ['analista', 'supervisor']},
+        limit_choices_to={'tipo_usuario__in': TipoUsuario.PUEDEN_SER_ASIGNADOS_CLIENTE},
         verbose_name='Usuario Asignado',
         help_text='Usuario responsable de este cliente (analista o supervisor)'
     )
@@ -150,7 +151,7 @@ class Cliente(models.Model):
         Si usuario_asignado es analista, retorna su supervisor.
         Si usuario_asignado es supervisor, retorna None (no hay herencia).
         """
-        if self.usuario_asignado and self.usuario_asignado.tipo_usuario == 'analista':
+        if self.usuario_asignado and self.usuario_asignado.tipo_usuario == TipoUsuario.ANALISTA:
             return self.usuario_asignado.supervisor
         return None
     

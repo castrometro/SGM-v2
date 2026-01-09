@@ -3,7 +3,7 @@
  * Issue #7: Muestra usuario asignado y supervisor heredado
  */
 import { useState } from 'react'
-import { Building2, Edit2, Trash2, ToggleLeft, ToggleRight, Eye, UserCheck, ShieldCheck } from 'lucide-react'
+import { Building2, Edit2, Trash2, ToggleLeft, ToggleRight, Eye, UserCheck, ShieldCheck, Database } from 'lucide-react'
 import { Table, Badge, Button, ConfirmDialog } from '../../../components/ui'
 import { useToggleClienteActivo, useDeleteCliente } from '../hooks/useClientes'
 import { TIPO_USUARIO } from '../../../constants'
@@ -58,6 +58,7 @@ const ClientesTable = ({ clientes = [], onEdit, onView, onManageAsignaciones }) 
           <Table.Row hoverable={false}>
             <Table.Head>Cliente</Table.Head>
             <Table.Head>RUT</Table.Head>
+            <Table.Head>ERP</Table.Head>
             <Table.Head>Industria</Table.Head>
             <Table.Head>Usuario Asignado</Table.Head>
             <Table.Head>Contacto</Table.Head>
@@ -89,6 +90,18 @@ const ClientesTable = ({ clientes = [], onEdit, onView, onManageAsignaciones }) 
                 <code className="text-sm bg-secondary-800 px-2 py-0.5 rounded">
                   {cliente.rut}
                 </code>
+              </Table.Cell>
+              <Table.Cell>
+                {cliente.erp_activo ? (
+                  <div className="flex items-center gap-2">
+                    <Database className="h-3.5 w-3.5 text-blue-400" />
+                    <Badge variant="info">
+                      {cliente.erp_activo.nombre}
+                    </Badge>
+                  </div>
+                ) : (
+                  <span className="text-secondary-500 text-sm">Sin ERP</span>
+                )}
               </Table.Cell>
               <Table.Cell>
                 {cliente.industria_nombre ? (

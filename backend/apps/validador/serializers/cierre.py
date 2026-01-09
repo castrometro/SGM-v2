@@ -4,6 +4,7 @@ Serializers para Cierre.
 
 from rest_framework import serializers
 from ..models import Cierre
+from ..constants import EstadoCierre
 
 
 class CierreListSerializer(serializers.ModelSerializer):
@@ -94,7 +95,7 @@ class CierreCreateSerializer(serializers.ModelSerializer):
         cliente = validated_data['cliente']
         es_primer_cierre = not Cierre.objects.filter(
             cliente=cliente,
-            estado='finalizado'
+            estado=EstadoCierre.FINALIZADO
         ).exists()
         
         validated_data['es_primer_cierre'] = es_primer_cierre

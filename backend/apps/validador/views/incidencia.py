@@ -18,6 +18,8 @@ from ..serializers import (
     ComentarioIncidenciaSerializer,
     ComentarioCrearSerializer,
 )
+from ..services import IncidenciaService
+from ..constants import EstadoIncidencia
 from shared.permissions import IsSupervisor
 
 
@@ -63,22 +65,23 @@ class IncidenciaViewSet(viewsets.ModelViewSet):
         accion = serializer.validated_data['accion']
         motivo = serializer.validated_data.get('motivo', '')
         
-        if accion == 'aprobar':
-            incidencia.estado = 'aprobada'
-        else:
-            incidencia.estado = 'rechazada'
+        # Usar el servicio para la lógica de negocio
+        result = IncidenciaService.resolver(
+            incidencia=incidencia,
+            accion=accion,
+            user=request.user,
+            motivo=motivo
+        )
         
-        incidencia.resuelto_por = request.user
-        incidencia.fecha_resolucion = timezone.now()
-        incidencia.motivo_resolucion = motivo
-        incidencia.save()
-        
-        # Actualizar contadores del cierre
-        incidencia.cierre.actualizar_contadores()
+        if not result.success:
+            return Response(
+                {'error': result.error},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         return Response({
             'message': f'Incidencia {accion}da exitosamente',
-            'incidencia': IncidenciaDetailSerializer(incidencia).data
+            'incidencia': IncidenciaDetailSerializer(result.data).data
         })
     
     @action(detail=True, methods=['post'])
@@ -97,8 +100,8 @@ class IncidenciaViewSet(viewsets.ModelViewSet):
         comentario = serializer.save()
         
         # Cambiar estado a "en revisión" si estaba pendiente
-        if incidencia.estado == 'pendiente':
-            incidencia.estado = 'en_revision'
+        if incidencia.estado == EstadoIncidencia.PENDIENTE:
+            incidencia.estado = EstadoIncidencia.EN_REVISION
             incidencia.save()
         
         return Response(
@@ -129,17 +132,17 @@ class IncidenciaViewSet(viewsets.ModelViewSet):
         incidencias = Incidencia.objects.filter(cierre_id=cierre_id)
         
         total = incidencias.count()
-        aprobadas = incidencias.filter(estado='aprobada').count()
-        rechazadas = incidencias.filter(estado='rechazada').count()
-        pendientes = incidencias.filter(estado__in=['pendiente', 'en_revision']).count()
+        aprobadas = incidencias.filter(estado=EstadoIncidencia.APROBADA).count()
+        rechazadas = incidencias.filter(estado=EstadoIncidencia.RECHAZADA).count()
+        pendientes = incidencias.filter(estado__in=EstadoIncidencia.ESTADOS_ABIERTOS).count()
         
         # Por categoría
         por_categoria = incidencias.values(
             'categoria__codigo', 'categoria__nombre'
         ).annotate(
             total=Count('id'),
-            aprobadas=Count('id', filter=Q(estado='aprobada')),
-            pendientes=Count('id', filter=Q(estado__in=['pendiente', 'en_revision']))
+            aprobadas=Count('id', filter=Q(estado=EstadoIncidencia.APROBADA)),
+            pendientes=Count('id', filter=Q(estado__in=EstadoIncidencia.ESTADOS_ABIERTOS))
         )
         
         return Response({

@@ -74,6 +74,9 @@ class EstadoCierre:
     # Estados que requieren acción del supervisor
     ESTADOS_REQUIEREN_SUPERVISOR = [REVISION_INCIDENCIAS]
     
+    # Estados que requieren atención/revisión (para dashboard)
+    ESTADOS_REQUIEREN_ATENCION = [DETECCION_INCIDENCIAS, REVISION_INCIDENCIAS]
+    
     # Estados donde se puede finalizar
     ESTADOS_PUEDEN_FINALIZAR = [CONSOLIDADO, REVISION_INCIDENCIAS, DETECCION_INCIDENCIAS]
     

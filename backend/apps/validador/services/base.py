@@ -19,7 +19,9 @@ class ServiceResult(Generic[T]):
     Resultado estándar de operaciones de servicio.
     
     Uso:
-        result = CierreService.cambiar_estado(cierre, 'consolidado')
+        from apps.validador.constants import EstadoCierre
+        
+        result = CierreService.cambiar_estado(cierre, EstadoCierre.CONSOLIDADO)
         if result.success:
             print(result.data)
         else:

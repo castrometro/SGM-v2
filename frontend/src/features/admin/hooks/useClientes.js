@@ -162,3 +162,43 @@ export const useReasignarCliente = () => {
     },
   })
 }
+
+// ============================================
+// Hooks para gestión de ERPs
+// ============================================
+
+/**
+ * Hook para obtener ERPs activos (para selectores)
+ */
+export const useErpsActivos = () => {
+  return useQuery({
+    queryKey: ['erps-activos'],
+    queryFn: async () => {
+      const { data } = await api.get('/v1/core/erps/activos/')
+      return data
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutos
+  })
+}
+
+/**
+ * Hook para asignar ERP a un cliente
+ */
+export const useAsignarERP = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ clienteId, erpId }) => {
+      const { data } = await api.post(
+        `/v1/core/clientes/${clienteId}/asignar_erp/`,
+        { erp_id: erpId }
+      )
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] })
+      queryClient.invalidateQueries({ queryKey: ['clientes'] })
+      queryClient.invalidateQueries({ queryKey: ['mis-clientes'] })
+    },
+  })
+}

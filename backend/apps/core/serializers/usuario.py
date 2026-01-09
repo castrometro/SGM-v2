@@ -16,6 +16,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
         read_only=True,
         allow_null=True
     )
+    supervisor_info = serializers.SerializerMethodField()
     
     class Meta:
         model = Usuario
@@ -29,10 +30,22 @@ class UsuarioSerializer(serializers.ModelSerializer):
             'cargo',
             'supervisor',
             'supervisor_nombre',
+            'supervisor_info',
             'is_active',
             'fecha_registro',
         ]
         read_only_fields = ['id', 'fecha_registro']
+    
+    def get_supervisor_info(self, obj):
+        """Retorna información del supervisor como objeto."""
+        if obj.supervisor:
+            return {
+                'id': obj.supervisor.id,
+                'nombre': obj.supervisor.nombre,
+                'apellido': obj.supervisor.apellido,
+                'email': obj.supervisor.email,
+            }
+        return None
 
 
 class UsuarioCreateSerializer(serializers.ModelSerializer):

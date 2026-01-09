@@ -7,6 +7,8 @@ import { Input, Select, Textarea, Checkbox, Button } from '../../../components/u
 const ClienteForm = ({ 
   cliente = null, 
   industrias = [], 
+  erps = [],
+  showErpField = false,
   onSubmit, 
   onCancel,
   isLoading = false 
@@ -18,11 +20,16 @@ const ClienteForm = ({
     handleSubmit,
     formState: { errors },
   } = useForm({
-    defaultValues: cliente || {
+    defaultValues: cliente ? {
+      ...cliente,
+      industria: cliente.industria?.id || cliente.industria || '',
+      erp_id: cliente.erp_activo?.id || '',
+    } : {
       rut: '',
       razon_social: '',
       nombre_comercial: '',
       industria: '',
+      erp_id: '',
       bilingue: false,
       contacto_nombre: '',
       contacto_email: '',
@@ -37,11 +44,17 @@ const ClienteForm = ({
     label: ind.nombre,
   }))
 
+  const erpOptions = erps.map((erp) => ({
+    value: erp.id,
+    label: erp.nombre,
+  }))
+
   const handleFormSubmit = (data) => {
-    // Convertir string vacío a null para industria
+    // Convertir string vacío a null para industria y erp_id
     const submitData = {
       ...data,
       industria: data.industria || null,
+      erp_id: data.erp_id || null,
     }
     onSubmit(submitData)
   }
@@ -139,6 +152,16 @@ const ClienteForm = ({
         <h3 className="text-sm font-semibold text-secondary-400 uppercase tracking-wider">
           Configuración
         </h3>
+        
+        {showErpField && (
+          <Select
+            label="Sistema ERP"
+            options={erpOptions}
+            placeholder="Seleccione un ERP"
+            helperText="Sistema ERP asignado al cliente para validaciones"
+            {...register('erp_id')}
+          />
+        )}
         
         <div className="flex flex-wrap gap-6">
           <Checkbox

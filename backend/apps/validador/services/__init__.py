@@ -7,9 +7,10 @@ y los modelos.
 
 Uso:
     from apps.validador.services import CierreService, ArchivoService
+    from apps.validador.constants import EstadoCierre
     
     # Cambiar estado de un cierre
-    result = CierreService.cambiar_estado(cierre, 'consolidado', user)
+    result = CierreService.cambiar_estado(cierre, EstadoCierre.CONSOLIDADO, user)
     if result.success:
         cierre_actualizado = result.data
     else:

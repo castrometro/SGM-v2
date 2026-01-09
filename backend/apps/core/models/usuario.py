@@ -70,7 +70,7 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
         'Tipo de Usuario',
         max_length=20,
         choices=TIPO_USUARIO_CHOICES,
-        default='analista'
+        default=TipoUsuario.ANALISTA
     )
     cargo = models.CharField(
         'Cargo',

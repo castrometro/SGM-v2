@@ -6,6 +6,7 @@ Representa un proceso de validación mensual para un cliente.
 from django.db import models
 from django.conf import settings
 from apps.core.models import Cliente
+from ..constants import EstadoCierre, EstadoIncidencia
 
 
 class Cierre(models.Model):
@@ -24,18 +25,7 @@ class Cierre(models.Model):
     9. finalizado → Proceso completado
     """
     
-    ESTADO_CHOICES = [
-        ('carga_archivos', 'Carga de Archivos'),
-        ('clasificacion_conceptos', 'Clasificación de Conceptos'),
-        ('mapeo_items', 'Mapeo de Items'),
-        ('comparacion', 'Comparación en Proceso'),
-        ('con_discrepancias', 'Con Discrepancias'),
-        ('consolidado', 'Consolidado'),
-        ('deteccion_incidencias', 'Detectando Incidencias'),
-        ('revision_incidencias', 'Revisión de Incidencias'),
-        ('finalizado', 'Finalizado'),
-        ('error', 'Error en Proceso'),
-    ]
+    ESTADO_CHOICES = EstadoCierre.CHOICES
     
     # Relaciones principales
     cliente = models.ForeignKey(
@@ -54,7 +44,7 @@ class Cierre(models.Model):
     estado = models.CharField(
         max_length=30,
         choices=ESTADO_CHOICES,
-        default='carga_archivos'
+        default=EstadoCierre.CARGA_ARCHIVOS
     )
     
     # Usuario analista asignado
@@ -130,7 +120,7 @@ class Cierre(models.Model):
             return Cierre.objects.filter(
                 cliente=self.cliente,
                 periodo=periodo_anterior,
-                estado='finalizado'
+                estado=EstadoCierre.FINALIZADO
             ).first()
         except:
             return None
@@ -140,7 +130,7 @@ class Cierre(models.Model):
         self.total_discrepancias = self.discrepancias.count()
         self.discrepancias_resueltas = self.discrepancias.filter(resuelta=True).count()
         self.total_incidencias = self.incidencias.count()
-        self.incidencias_aprobadas = self.incidencias.filter(estado='aprobada').count()
+        self.incidencias_aprobadas = self.incidencias.filter(estado=EstadoIncidencia.APROBADA).count()
         self.save(update_fields=[
             'total_discrepancias', 
             'discrepancias_resueltas',
@@ -161,7 +151,7 @@ class Cierre(models.Model):
         """Verifica si puede finalizar el cierre."""
         if self.es_primer_cierre:
             # Sin mes anterior, no hay incidencias que revisar
-            return self.estado == 'consolidado'
+            return self.estado == EstadoCierre.CONSOLIDADO
         
         return (
             self.total_incidencias == 0 or

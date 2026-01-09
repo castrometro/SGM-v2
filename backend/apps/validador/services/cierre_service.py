@@ -23,25 +23,26 @@ class CierreService(BaseService):
     
     Ejemplo de uso:
         from apps.validador.services import CierreService
+        from apps.validador.constants import EstadoCierre
         
-        result = CierreService.cambiar_estado(cierre, 'consolidado', user)
+        result = CierreService.cambiar_estado(cierre, EstadoCierre.CONSOLIDADO, user)
         if result.success:
             cierre_actualizado = result.data
     """
     
     # Transiciones de estado permitidas
     TRANSICIONES_VALIDAS = {
-        'pendiente': ['en_proceso', 'cancelado'],
-        'en_proceso': ['carga_archivos', 'cancelado'],
-        'carga_archivos': ['procesando', 'en_proceso'],
-        'procesando': ['comparacion', 'carga_archivos', 'error'],
-        'comparacion': ['consolidado', 'procesando'],
-        'consolidado': ['deteccion_incidencias', 'finalizado'],  # finalizado si es primer cierre
-        'deteccion_incidencias': ['revision_incidencias', 'finalizado'],
-        'revision_incidencias': ['finalizado', 'deteccion_incidencias'],
-        'finalizado': [],  # Estado final
-        'cancelado': [],   # Estado final
-        'error': ['en_proceso', 'carga_archivos'],
+        EstadoCierre.CARGA_ARCHIVOS: [EstadoCierre.CLASIFICACION_CONCEPTOS, EstadoCierre.MAPEO_ITEMS, EstadoCierre.COMPARACION],
+        EstadoCierre.CLASIFICACION_CONCEPTOS: [EstadoCierre.MAPEO_ITEMS, EstadoCierre.COMPARACION],
+        EstadoCierre.MAPEO_ITEMS: [EstadoCierre.COMPARACION],
+        EstadoCierre.COMPARACION: [EstadoCierre.CON_DISCREPANCIAS, EstadoCierre.CONSOLIDADO],
+        EstadoCierre.CON_DISCREPANCIAS: [EstadoCierre.COMPARACION, EstadoCierre.CONSOLIDADO],
+        EstadoCierre.CONSOLIDADO: [EstadoCierre.DETECCION_INCIDENCIAS, EstadoCierre.FINALIZADO],  # finalizado si es primer cierre
+        EstadoCierre.DETECCION_INCIDENCIAS: [EstadoCierre.REVISION_INCIDENCIAS, EstadoCierre.FINALIZADO],
+        EstadoCierre.REVISION_INCIDENCIAS: [EstadoCierre.FINALIZADO, EstadoCierre.DETECCION_INCIDENCIAS],
+        EstadoCierre.FINALIZADO: [],  # Estado final
+        EstadoCierre.CANCELADO: [],   # Estado final
+        EstadoCierre.ERROR: [EstadoCierre.CARGA_ARCHIVOS],
     }
     
     @classmethod

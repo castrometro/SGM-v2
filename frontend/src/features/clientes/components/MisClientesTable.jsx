@@ -3,7 +3,7 @@
  * Issue #9: Formato tabla para página Mis Clientes
  */
 import { Link } from 'react-router-dom'
-import { Building2, Eye } from 'lucide-react'
+import { Building2, Eye, Database } from 'lucide-react'
 import { Table, Badge, Button } from '../../../components/ui'
 
 const MisClientesTable = ({ clientes = [] }) => {
@@ -23,6 +23,7 @@ const MisClientesTable = ({ clientes = [] }) => {
         <Table.Row hoverable={false}>
           <Table.Head>Cliente</Table.Head>
           <Table.Head>RUT</Table.Head>
+          <Table.Head>ERP</Table.Head>
           <Table.Head>Industria</Table.Head>
           <Table.Head>Contacto</Table.Head>
           <Table.Head align="center">Estado</Table.Head>
@@ -53,6 +54,18 @@ const MisClientesTable = ({ clientes = [] }) => {
               <code className="text-sm bg-secondary-800 px-2 py-0.5 rounded">
                 {cliente.rut || 'Sin RUT'}
               </code>
+            </Table.Cell>
+            <Table.Cell>
+              {cliente.erp_activo ? (
+                <div className="flex items-center gap-2">
+                  <Database className="h-3.5 w-3.5 text-blue-400" />
+                  <Badge variant="info">
+                    {cliente.erp_activo.nombre}
+                  </Badge>
+                </div>
+              ) : (
+                <span className="text-secondary-500 text-sm">Sin ERP</span>
+              )}
             </Table.Cell>
             <Table.Cell>
               {cliente.industria_nombre ? (
