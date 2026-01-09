@@ -19,7 +19,8 @@ import {
   Phone,
   User,
   Globe,
-  Calendar
+  Calendar,
+  Database
 } from 'lucide-react'
 import api from '../../../api/axios'
 import { Card, CardContent, CardHeader, CardTitle, Badge, Button } from '../../../components/ui'
@@ -249,6 +250,17 @@ const ClienteDetailPage = () => {
                   <p className="text-secondary-100">
                     {cliente.industria?.nombre || cliente.industria_nombre || '-'}
                   </p>
+                </div>
+                <div>
+                  <p className="text-xs text-secondary-500">Sistema ERP</p>
+                  <div className="flex items-center gap-2">
+                    <Database className="h-4 w-4 text-secondary-500" />
+                    <p className="text-secondary-100">
+                      {cliente.erp_activo?.nombre || 
+                        <span className="text-secondary-500 italic">Sin ERP asignado</span>
+                      }
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
