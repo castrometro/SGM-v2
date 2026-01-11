@@ -36,7 +36,7 @@ class Migration(migrations.Migration):
         # Add new index for header_pandas
         migrations.AddIndex(
             model_name='conceptolibro',
-            index=models.Index(fields=['cliente', 'erp', 'header_pandas'], name='validador_c_cliente_header_pandas_idx'),
+            index=models.Index(fields=['cliente', 'erp', 'header_pandas'], name='validador_cl_erp_h_pandas_idx'),
         ),
         
         # Update ordering
