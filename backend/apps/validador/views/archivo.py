@@ -15,6 +15,7 @@ from ..serializers import (
     ArchivoAnalistaSerializer,
     ArchivoAnalistaUploadSerializer,
 )
+from shared.audit import audit_create, audit_delete
 
 
 class ArchivoERPViewSet(viewsets.ModelViewSet):
@@ -44,10 +45,16 @@ class ArchivoERPViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         archivo = serializer.save()
+        audit_create(self.request, archivo)  # Registrar en auditoría
         
         # Disparar procesamiento asíncrono con usuario para auditoría
         from ..tasks import procesar_archivo_erp
         procesar_archivo_erp.delay(archivo.id, usuario_id=self.request.user.id)
+    
+    def perform_destroy(self, instance):
+        """Registrar eliminación en auditoría."""
+        audit_delete(self.request, instance)
+        instance.delete()
     
     @action(detail=False, methods=['get'])
     def por_cierre(self, request):
@@ -101,10 +108,16 @@ class ArchivoAnalistaViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         archivo = serializer.save()
+        audit_create(self.request, archivo)  # Registrar en auditoría
         
         # Disparar procesamiento asíncrono con usuario para auditoría
         from ..tasks import procesar_archivo_analista
         procesar_archivo_analista.delay(archivo.id, usuario_id=self.request.user.id)
+    
+    def perform_destroy(self, instance):
+        """Registrar eliminación en auditoría."""
+        audit_delete(self.request, instance)
+        instance.delete()
     
     @action(detail=False, methods=['get'])
     def por_cierre(self, request):

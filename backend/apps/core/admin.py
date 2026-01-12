@@ -5,7 +5,10 @@ Admin de la app Core para SGM v2.
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from .models import Usuario, Cliente, Industria, Servicio, ServicioCliente, ERP, ConfiguracionERPCliente
+from .models import (
+    Usuario, Cliente, Industria, Servicio, ServicioCliente,
+    ERP, ConfiguracionERPCliente, AuditLog
+)
 
 
 @admin.register(Usuario)
@@ -139,3 +142,59 @@ class ConfiguracionERPClienteAdmin(admin.ModelAdmin):
         """Muestra si la configuración está vigente."""
         return '✅' if obj.esta_vigente else '❌'
     esta_vigente_display.short_description = 'Vigente'
+
+
+# =============================================================================
+# Auditoría
+# =============================================================================
+
+@admin.register(AuditLog)
+class AuditLogAdmin(admin.ModelAdmin):
+    """Admin para logs de auditoría - Solo lectura."""
+    
+    list_display = [
+        'timestamp', 'usuario_email', 'accion', 'modelo', 
+        'objeto_repr', 'ip_address', 'cliente_id'
+    ]
+    list_filter = ['accion', 'modelo', 'timestamp']
+    search_fields = ['usuario_email', 'objeto_repr', 'ip_address']
+    ordering = ['-timestamp']
+    date_hierarchy = 'timestamp'
+    
+    readonly_fields = [
+        'usuario', 'usuario_email', 'ip_address', 'user_agent',
+        'accion', 'modelo', 'objeto_id', 'objeto_repr', 'cliente_id',
+        'datos_anteriores', 'datos_nuevos', 'endpoint', 'metodo_http', 'timestamp'
+    ]
+    
+    fieldsets = (
+        ('Información del Usuario', {
+            'fields': ('usuario', 'usuario_email', 'ip_address', 'user_agent')
+        }),
+        ('Acción', {
+            'fields': ('accion', 'modelo', 'objeto_id', 'objeto_repr', 'cliente_id')
+        }),
+        ('Request', {
+            'fields': ('endpoint', 'metodo_http'),
+            'classes': ('collapse',),
+        }),
+        ('Datos', {
+            'fields': ('datos_anteriores', 'datos_nuevos'),
+            'classes': ('collapse',),
+        }),
+        ('Metadata', {
+            'fields': ('timestamp',),
+        }),
+    )
+    
+    def has_add_permission(self, request):
+        """No se pueden crear registros de auditoría manualmente."""
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        """No se pueden modificar registros de auditoría."""
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        """Solo superusuarios pueden eliminar (para compliance)."""
+        return request.user.is_superuser

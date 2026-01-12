@@ -158,3 +158,40 @@ class TipoERP:
             if s == slug:
                 return nombre
         return slug.upper()
+
+
+class AccionAudit:
+    """
+    Tipos de acciones para auditoría.
+    
+    Uso:
+        from apps.core.constants import AccionAudit
+        
+        AuditLog.registrar(request, AccionAudit.CREATE, instancia)
+    
+    Compliance:
+        - ISO 27001:2022 (A.8.15) - Logging
+        - Ley 21.719 Chile - Trazabilidad de acceso a datos personales
+    """
+    CREATE = 'create'
+    UPDATE = 'update'
+    DELETE = 'delete'
+    LOGIN = 'login'
+    LOGOUT = 'logout'
+    EXPORT = 'export'
+    
+    CHOICES = [
+        (CREATE, 'Crear'),
+        (UPDATE, 'Actualizar'),
+        (DELETE, 'Eliminar'),
+        (LOGIN, 'Inicio de sesión'),
+        (LOGOUT, 'Cierre de sesión'),
+        (EXPORT, 'Exportación'),
+    ]
+    
+    ALL = [CREATE, UPDATE, DELETE, LOGIN, LOGOUT, EXPORT]
+    
+    @classmethod
+    def es_valido(cls, valor):
+        """Verifica si un valor es una acción válida."""
+        return valor in cls.ALL

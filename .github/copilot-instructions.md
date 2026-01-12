@@ -116,11 +116,33 @@ cd frontend && npm run dev              # Frontend dev server
 ```
 POST /api/auth/token/              - Login (JWT)
 GET  /api/v1/core/me/              - Usuario + permisos
+GET  /api/v1/core/audit-logs/      - Logs de auditoría (solo gerentes)
 GET  /api/v1/validador/cierres/    - Lista cierres
 GET  /api/v1/validador/cierres/{id}/resumen/  - Resumen cierre
 POST /api/v1/validador/archivos-erp/          - Subir archivo ERP
 POST /api/v1/validador/incidencias/{id}/resolver/  - Resolver incidencia
 ```
+
+## Auditoría
+
+Para cumplimiento ISO 27001 y Ley 21.719, usar funciones de `shared/audit.py`:
+
+```python
+from shared.audit import audit_create, audit_update, audit_delete, modelo_a_dict
+
+# En perform_create
+def perform_create(self, serializer):
+    instancia = serializer.save()
+    audit_create(self.request, instancia)
+
+# En perform_update
+def perform_update(self, serializer):
+    datos_ant = modelo_a_dict(serializer.instance)  # ANTES del save
+    instancia = serializer.save()
+    audit_update(self.request, instancia, datos_ant)
+```
+
+Ver [docs/backend/AUDIT_SYSTEM.md](docs/backend/AUDIT_SYSTEM.md) para documentación completa.
 
 ## Convenciones
 
@@ -134,7 +156,9 @@ POST /api/v1/validador/incidencias/{id}/resolver/  - Resolver incidencia
 
 - [backend/apps/validador/services/__init__.py](backend/apps/validador/services/__init__.py) - Service Layer exports
 - [backend/shared/permissions.py](backend/shared/permissions.py) - Clases de permisos DRF
+- [backend/shared/audit.py](backend/shared/audit.py) - Funciones de auditoría
 - [frontend/src/constants/index.js](frontend/src/constants/index.js) - Constantes frontend
 - [frontend/src/hooks/usePermissions.js](frontend/src/hooks/usePermissions.js) - Hook de permisos
 - [frontend/src/contexts/AuthContext.jsx](frontend/src/contexts/AuthContext.jsx) - Auth provider
 - [docs/backend/SERVICE_LAYER.md](docs/backend/SERVICE_LAYER.md) - Guía detallada del Service Layer
+- [docs/backend/AUDIT_SYSTEM.md](docs/backend/AUDIT_SYSTEM.md) - Sistema de auditoría

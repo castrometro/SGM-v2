@@ -22,6 +22,7 @@ from apps.core.serializers import (
     ChangePasswordSerializer,
 )
 from shared.permissions import IsGerente, IsSupervisor
+from shared.audit import audit_create, audit_update, audit_delete, modelo_a_dict
 
 
 class UsuarioViewSet(viewsets.ModelViewSet):
@@ -69,6 +70,22 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         
         # Otros solo se ven a sí mismos
         return queryset.filter(id=user.id)
+    
+    def perform_create(self, serializer):
+        """Registrar creación de usuario en auditoría."""
+        usuario = serializer.save()
+        audit_create(self.request, usuario)
+    
+    def perform_update(self, serializer):
+        """Registrar actualización de usuario en auditoría."""
+        datos_anteriores = modelo_a_dict(serializer.instance, excluir=['password'])
+        usuario = serializer.save()
+        audit_update(self.request, usuario, datos_anteriores)
+    
+    def perform_destroy(self, instance):
+        """Registrar eliminación de usuario en auditoría."""
+        audit_delete(self.request, instance)
+        instance.delete()
     
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, IsGerente])
     def todos(self, request):

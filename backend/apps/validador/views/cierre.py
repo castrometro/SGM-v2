@@ -26,6 +26,7 @@ from ..services import CierreService, EquipoService
 from ..constants import EstadoCierre
 from apps.core.constants import TipoUsuario
 from shared.permissions import IsAnalista, IsSupervisor
+from shared.audit import audit_create, audit_update, audit_delete, modelo_a_dict
 
 
 
@@ -82,7 +83,19 @@ class CierreViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         """Asignar el usuario actual como analista al crear un cierre."""
-        serializer.save(analista=self.request.user)
+        cierre = serializer.save(analista=self.request.user)
+        audit_create(self.request, cierre)
+    
+    def perform_update(self, serializer):
+        """Registrar actualización en auditoría."""
+        datos_anteriores = modelo_a_dict(serializer.instance)
+        cierre = serializer.save()
+        audit_update(self.request, cierre, datos_anteriores)
+    
+    def perform_destroy(self, instance):
+        """Registrar eliminación en auditoría."""
+        audit_delete(self.request, instance)
+        instance.delete()
     
     @action(detail=True, methods=['post'])
     def cambiar_estado(self, request, pk=None):

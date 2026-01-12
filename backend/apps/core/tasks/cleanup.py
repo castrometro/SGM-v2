@@ -103,3 +103,70 @@ def cleanup_task_results(self, retention_days=None):
             "retention_days": retention_days,
             "cutoff_date": cutoff_date.isoformat(),
         }
+
+
+@shared_task(bind=True, name="core.cleanup_audit_logs")
+def cleanup_audit_logs(self, retention_days=365):
+    """
+    Limpia logs de auditoría antiguos.
+    
+    Retención default: 365 días (requisito legal).
+    
+    Args:
+        retention_days: Días de retención (default 365 para cumplimiento legal)
+    
+    Returns:
+        dict con resultados de la limpieza
+    
+    Compliance:
+        - ISO 27001: A.8.10 - Eliminación de información
+        - Ley 21.719: Art. 25 - Supresión de datos (mínimo 1 año)
+    """
+    from apps.core.models import AuditLog
+    
+    cutoff_date = timezone.now() - timedelta(days=retention_days)
+    
+    logger.info(
+        f"[Task {self.request.id}] Iniciando limpieza de AuditLogs. "
+        f"Retención: {retention_days} días, Fecha corte: {cutoff_date}"
+    )
+    
+    try:
+        # Eliminar en batches
+        deleted_total = 0
+        batch_size = 1000
+        
+        while True:
+            ids_to_delete = list(
+                AuditLog.objects.filter(timestamp__lt=cutoff_date)
+                .values_list("id", flat=True)[:batch_size]
+            )
+            
+            if not ids_to_delete:
+                break
+            
+            deleted, _ = AuditLog.objects.filter(id__in=ids_to_delete).delete()
+            deleted_total += deleted
+            
+            logger.debug(f"[Task {self.request.id}] Eliminados {deleted} AuditLogs (batch)")
+        
+        logger.info(
+            f"[Task {self.request.id}] Limpieza de AuditLogs completada. "
+            f"Eliminados: {deleted_total} registros"
+        )
+        
+        return {
+            "success": True,
+            "deleted_count": deleted_total,
+            "retention_days": retention_days,
+            "cutoff_date": cutoff_date.isoformat(),
+        }
+        
+    except Exception as e:
+        logger.error(f"[Task {self.request.id}] Error en limpieza de AuditLogs: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "retention_days": retention_days,
+            "cutoff_date": cutoff_date.isoformat(),
+        }

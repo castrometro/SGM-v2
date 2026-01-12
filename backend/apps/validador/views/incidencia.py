@@ -21,6 +21,7 @@ from ..serializers import (
 from ..services import IncidenciaService
 from ..constants import EstadoIncidencia
 from shared.permissions import IsSupervisor
+from shared.audit import audit_update, modelo_a_dict
 
 
 class IncidenciaViewSet(viewsets.ModelViewSet):
@@ -65,6 +66,9 @@ class IncidenciaViewSet(viewsets.ModelViewSet):
         accion = serializer.validated_data['accion']
         motivo = serializer.validated_data.get('motivo', '')
         
+        # Capturar estado anterior para auditoría
+        datos_anteriores = modelo_a_dict(incidencia)
+        
         # Usar el servicio para la lógica de negocio
         result = IncidenciaService.resolver(
             incidencia=incidencia,
@@ -78,6 +82,9 @@ class IncidenciaViewSet(viewsets.ModelViewSet):
                 {'error': result.error},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # Registrar en auditoría
+        audit_update(request, result.data, datos_anteriores)
         
         return Response({
             'message': f'Incidencia {accion}da exitosamente',

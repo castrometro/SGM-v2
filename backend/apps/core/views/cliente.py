@@ -21,6 +21,7 @@ from apps.core.serializers import (
     IndustriaSerializer,
 )
 from shared.permissions import IsGerente, IsSupervisor
+from shared.audit import audit_create, audit_update, audit_delete, modelo_a_dict
 
 
 class IndustriaViewSet(viewsets.ModelViewSet):
@@ -95,6 +96,22 @@ class ClienteViewSet(viewsets.ModelViewSet):
         
         # Analistas ven solo clientes asignados directamente a ellos
         return queryset.filter(usuario_asignado=user)
+    
+    def perform_create(self, serializer):
+        """Registrar creación de cliente en auditoría."""
+        cliente = serializer.save()
+        audit_create(self.request, cliente)
+    
+    def perform_update(self, serializer):
+        """Registrar actualización de cliente en auditoría."""
+        datos_anteriores = modelo_a_dict(serializer.instance)
+        cliente = serializer.save()
+        audit_update(self.request, cliente, datos_anteriores)
+    
+    def perform_destroy(self, instance):
+        """Registrar eliminación de cliente en auditoría."""
+        audit_delete(self.request, instance)
+        instance.delete()
     
     @action(detail=True, methods=['get'])
     def cierres(self, request, pk=None):

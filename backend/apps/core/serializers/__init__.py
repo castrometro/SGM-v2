@@ -24,6 +24,7 @@ from .erp import (
     ConfiguracionERPClienteCreateSerializer,
     ConfiguracionERPClienteMinimalSerializer,
 )
+from .audit import AuditLogSerializer, AuditLogListSerializer
 
 __all__ = [
     'UsuarioSerializer',
@@ -47,4 +48,7 @@ __all__ = [
     'ConfiguracionERPClienteDetailSerializer',
     'ConfiguracionERPClienteCreateSerializer',
     'ConfiguracionERPClienteMinimalSerializer',
+    # Audit
+    'AuditLogSerializer',
+    'AuditLogListSerializer',
 ]
