@@ -56,15 +56,20 @@ class LibroViewSet(viewsets.ViewSet):
                 "headers_clasificados": 42,
                 "progreso": 93,
                 "headers": ["RUT", "NOMBRE", "SUELDO BASE", ...],
+                "tiene_duplicados": true,
                 "conceptos": [
                     {
                         "id": 1,
                         "header_original": "SUELDO BASE",
+                        "header_pandas": "SUELDO BASE",
+                        "ocurrencia": 1,
+                        "es_duplicado": false,
                         "categoria": "haberes_imponibles",
                         "categoria_display": "Haberes Imponibles",
                         "es_identificador": false,
                         "orden": 2,
-                        "clasificado": true
+                        "clasificado": true,
+                        "sugerencia": null
                     },
                     ...
                 ]
@@ -88,14 +93,26 @@ class LibroViewSet(viewsets.ViewSet):
             activo=True
         ).order_by('orden')
         
-        headers = [c.header_original for c in conceptos]
+        # Obtener sugerencias para conceptos no clasificados
+        sugerencias = LibroService._obtener_sugerencias_clasificacion(cierre.cliente, config_erp.erp)
+        
+        # Serializar conceptos y agregar sugerencias
+        conceptos_data = ConceptoLibroListSerializer(conceptos, many=True).data
+        for concepto_dict in conceptos_data:
+            header_original = concepto_dict.get('header_original')
+            if not concepto_dict.get('clasificado') and header_original in sugerencias:
+                concepto_dict['sugerencia'] = sugerencias[header_original]
+        
+        headers = [c.header_pandas if c.header_pandas else c.header_original for c in conceptos]
+        tiene_duplicados = conceptos.filter(es_duplicado=True).exists()
         
         data = {
             'headers_total': archivo_erp.headers_total,
             'headers_clasificados': archivo_erp.headers_clasificados,
             'progreso': archivo_erp.progreso_clasificacion,
             'headers': headers,
-            'conceptos': ConceptoLibroListSerializer(conceptos, many=True).data
+            'tiene_duplicados': tiene_duplicados,
+            'conceptos': conceptos_data
         }
         
         return Response(data)
@@ -172,6 +189,83 @@ class LibroViewSet(viewsets.ViewSet):
         
         if result.success:
             return Response(result.data)
+        else:
+            return Response(
+                {'error': result.error},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=False, methods=['post'], url_path='(?P<archivo_id>[^/.]+)/clasificar-auto')
+    def clasificar_auto(self, request, archivo_id=None):
+        """
+        Aplica clasificación automática basada en conceptos previamente clasificados.
+        
+        POST /api/v1/validador/libro/{archivo_id}/clasificar-auto/
+        
+        Response:
+            {
+                "clasificados_auto": 15,
+                "total_clasificados": 42,
+                "total_headers": 45,
+                "listo_para_procesar": false,
+                "message": "Se clasificaron automáticamente 15 conceptos"
+            }
+        """
+        archivo_erp = get_object_or_404(ArchivoERP, id=archivo_id)
+        
+        # Aplicar clasificación automática
+        result = LibroService.aplicar_clasificacion_automatica(archivo_erp, request.user)
+        
+        if result.success:
+            data = result.data
+            data['message'] = f"Se clasificaron automáticamente {data['clasificados_auto']} conceptos"
+            return Response(data)
+        else:
+            return Response(
+                {'error': result.error},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=False, methods=['get'], url_path='(?P<archivo_id>[^/.]+)/pendientes')
+    def pendientes(self, request, archivo_id=None):
+        """
+        Obtiene la lista de conceptos pendientes de clasificación con sugerencias.
+        
+        GET /api/v1/validador/libro/{archivo_id}/pendientes/
+        
+        Response:
+            {
+                "count": 3,
+                "conceptos": [
+                    {
+                        "id": 45,
+                        "header": "BONO PRODUCCION",
+                        "header_original": "BONO PRODUCCION",
+                        "header_pandas": "BONO PRODUCCION",
+                        "ocurrencia": 1,
+                        "es_duplicado": false,
+                        "orden": 12,
+                        "categoria": null,
+                        "sugerencia": {
+                            "categoria": "haberes_imponibles",
+                            "es_identificador": false,
+                            "frecuencia": 5
+                        }
+                    },
+                    ...
+                ]
+            }
+        """
+        archivo_erp = get_object_or_404(ArchivoERP, id=archivo_id)
+        
+        # Obtener pendientes con sugerencias
+        result = LibroService.obtener_conceptos_pendientes(archivo_erp)
+        
+        if result.success:
+            return Response({
+                'count': len(result.data),
+                'conceptos': result.data
+            })
         else:
             return Response(
                 {'error': result.error},

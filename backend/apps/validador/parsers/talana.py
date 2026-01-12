@@ -47,7 +47,7 @@ class TalanaLibroParser(BaseLibroParser):
             archivo: Archivo Excel
         
         Returns:
-            Lista de headers (strings)
+            Lista de headers (strings) - incluye duplicados con sufijos
         """
         try:
             # Intentar leer hoja "Libro"
@@ -58,8 +58,20 @@ class TalanaLibroParser(BaseLibroParser):
                 df = self.leer_excel(archivo, sheet_name=0, header=self.fila_headers)
                 self.logger.info("Hoja 'Libro' no encontrada, usando primera hoja")
             
-            # Obtener headers (nombres de columnas)
-            headers = [str(col).strip() for col in df.columns if not str(col).startswith('Unnamed')]
+            # Analizar headers y detectar duplicados
+            headers_info = self.analizar_headers_duplicados(df.columns)
+            
+            # Retornar lista de nombres de pandas (con .1, .2 si hay duplicados)
+            headers = [info.pandas_name for info in headers_info]
+            
+            # Log de duplicados detectados
+            duplicados = [info for info in headers_info if info.is_duplicate]
+            if duplicados:
+                originales_duplicados = set(info.original for info in duplicados)
+                self.logger.warning(
+                    f"Detectados {len(originales_duplicados)} headers duplicados: "
+                    f"{', '.join(originales_duplicados)}"
+                )
             
             self.logger.info(f"Extraídos {len(headers)} headers del libro Talana")
             return headers
@@ -68,13 +80,14 @@ class TalanaLibroParser(BaseLibroParser):
             self.logger.error(f"Error extrayendo headers de Talana: {e}")
             raise
     
-    def parsear_empleado(self, fila: Dict, conceptos_clasificados: Dict) -> Dict:
+    def parsear_empleado(self, fila: Dict, conceptos_clasificados: Dict, headers_info: List = None) -> Dict:
         """
         Parsea una fila de empleado del libro de Talana.
         
         Args:
             fila: Dict con los datos de la fila (columna -> valor)
-            conceptos_clasificados: Dict de {header: ConceptoLibro}
+            conceptos_clasificados: Dict de {pandas_name: ConceptoLibro}
+            headers_info: Lista de HeaderInfo opcional (para logging)
         
         Returns:
             Dict con datos del empleado estructurados
@@ -93,12 +106,12 @@ class TalanaLibroParser(BaseLibroParser):
         categorias_data = {}
         
         # Procesar cada columna de la fila
-        for header, valor in fila.items():
+        for pandas_name, valor in fila.items():
             if pd.isna(valor) or valor == '':
                 continue
             
-            # Buscar concepto clasificado para este header
-            concepto = conceptos_clasificados.get(header)
+            # Buscar concepto clasificado para este pandas_name
+            concepto = conceptos_clasificados.get(pandas_name)
             
             if not concepto:
                 # Header no clasificado, saltar
@@ -117,7 +130,7 @@ class TalanaLibroParser(BaseLibroParser):
             
             if categoria == 'info_adicional':
                 # Detectar campos conocidos
-                header_lower = header.lower()
+                header_lower = concepto.header_original.lower()
                 if 'nombre' in header_lower and not empleado_data['nombre']:
                     empleado_data['nombre'] = self.limpiar_texto(valor)
                 elif 'cargo' in header_lower:
@@ -137,7 +150,12 @@ class TalanaLibroParser(BaseLibroParser):
                 if categoria not in categorias_data:
                     categorias_data[categoria] = {}
                 
-                categorias_data[categoria][header] = monto
+                # Usar un key único que combine el header original y la ocurrencia
+                key_concepto = concepto.header_original
+                if concepto.es_duplicado:
+                    key_concepto = f"{concepto.header_original} (#{concepto.ocurrencia})"
+                
+                categorias_data[categoria][key_concepto] = monto
         
         # Calcular totales por categoría
         for categoria, conceptos in categorias_data.items():
@@ -157,7 +175,7 @@ class TalanaLibroParser(BaseLibroParser):
         
         Args:
             archivo: Archivo Excel del libro
-            conceptos_clasificados: Dict de {header: ConceptoLibro}
+            conceptos_clasificados: Dict de {pandas_name: ConceptoLibro}
         
         Returns:
             ProcessResult con lista de empleados procesados
@@ -176,6 +194,9 @@ class TalanaLibroParser(BaseLibroParser):
             if df.empty:
                 return ProcessResult.fail("El archivo no contiene datos de empleados")
             
+            # Analizar headers para detectar duplicados
+            headers_info = self.analizar_headers_duplicados(df.columns)
+            
             self.logger.info(f"Procesando {len(df)} filas del libro Talana")
             
             # Procesar cada fila
@@ -188,7 +209,7 @@ class TalanaLibroParser(BaseLibroParser):
                     fila_dict = row.to_dict()
                     
                     # Parsear empleado
-                    empleado_data = self.parsear_empleado(fila_dict, conceptos_clasificados)
+                    empleado_data = self.parsear_empleado(fila_dict, conceptos_clasificados, headers_info)
                     
                     # Validar que tenga RUT (obligatorio)
                     if not empleado_data['rut']:
@@ -218,18 +239,20 @@ class TalanaLibroParser(BaseLibroParser):
                 'total_filas': len(df),
                 'empleados_procesados': len(empleados),
                 'errores': len(errores_fila),
+                'headers_duplicados': len([h for h in headers_info if h.is_duplicate]),
             }
             
             self.logger.info(
                 f"Libro Talana procesado: {len(empleados)} empleados de {len(df)} filas"
             )
             
-            # Extraer headers
-            headers = [str(col).strip() for col in df.columns if not str(col).startswith('Unnamed')]
+            # Extraer headers (nombres pandas)
+            headers = [info.pandas_name for info in headers_info]
             
             return ProcessResult.ok(
                 data=empleados,
                 headers=headers,
+                headers_info=headers_info,
                 warnings=warnings,
                 metadata=metadata
             )

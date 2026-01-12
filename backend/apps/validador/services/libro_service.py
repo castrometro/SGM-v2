@@ -118,10 +118,11 @@ class LibroService(BaseService):
     def _sincronizar_conceptos(cls, archivo_erp: ArchivoERP, headers: List[str]):
         """
         Crea o actualiza ConceptoLibro para cada header encontrado.
+        Maneja headers duplicados correctamente.
         
         Args:
             archivo_erp: Archivo de donde vienen los headers
-            headers: Lista de headers a sincronizar
+            headers: Lista de headers a sincronizar (nombres como pandas los lee)
         """
         cierre = archivo_erp.cierre
         config_erp = cierre.cliente.configuraciones_erp.filter(activo=True).first()
@@ -129,22 +130,60 @@ class LibroService(BaseService):
         if not config_erp:
             return
         
-        for orden, header in enumerate(headers):
+        # Re-extraer headers con info de duplicados
+        parser = ParserFactory.get_parser_for_cliente(cierre.cliente)
+        if not parser:
+            return
+        
+        try:
+            # Leer archivo para analizar headers
+            if archivo_erp.archivo.path.endswith('.csv'):
+                import pandas as pd
+                df = pd.read_csv(archivo_erp.archivo.path, nrows=0)
+            else:
+                df = parser.leer_excel(archivo_erp.archivo.path, sheet_name=0, header=0, nrows=0)
+            
+            headers_info = parser.analizar_headers_duplicados(df.columns)
+        except Exception as e:
+            cls.get_logger().warning(f"No se pudo analizar headers para duplicados: {e}")
+            # Fallback: tratar todos como únicos
+            from ..parsers.base import HeaderInfo
+            headers_info = [
+                HeaderInfo(original=h, pandas_name=h, occurrence=1, is_duplicate=False)
+                for h in headers
+            ]
+        
+        for orden, header_info in enumerate(headers_info):
             # Crear o actualizar concepto
             concepto, created = ConceptoLibro.objects.get_or_create(
                 cliente=cierre.cliente,
                 erp=config_erp.erp,
-                header_original=header,
+                header_original=header_info.original,
+                ocurrencia=header_info.occurrence,
                 defaults={
+                    'header_pandas': header_info.pandas_name,
+                    'es_duplicado': header_info.is_duplicate,
                     'orden': orden,
                     'activo': True,
                 }
             )
             
-            if not created and concepto.orden != orden:
-                # Actualizar orden si cambió
-                concepto.orden = orden
-                concepto.save(update_fields=['orden'])
+            if not created:
+                # Actualizar campos si cambió algo
+                updated = False
+                if concepto.orden != orden:
+                    concepto.orden = orden
+                    updated = True
+                if concepto.header_pandas != header_info.pandas_name:
+                    concepto.header_pandas = header_info.pandas_name
+                    updated = True
+                if concepto.es_duplicado != header_info.is_duplicate:
+                    concepto.es_duplicado = header_info.is_duplicate
+                    updated = True
+                
+                if updated:
+                    concepto.save(update_fields=['orden', 'header_pandas', 'es_duplicado'])
+
     
     @classmethod
     @transaction.atomic
@@ -191,7 +230,9 @@ class LibroService(BaseService):
             # Clasificar cada concepto
             clasificados = 0
             for clas in clasificaciones:
-                header = clas.get('header')
+                # Puede venir header (pandas_name) o header_pandas
+                header = clas.get('header') or clas.get('header_pandas')
+                ocurrencia = clas.get('ocurrencia', 1)
                 categoria = clas.get('categoria')
                 es_identificador = clas.get('es_identificador', False)
                 
@@ -201,12 +242,32 @@ class LibroService(BaseService):
                     continue
                 
                 # Actualizar concepto
+                # Intentar por header_pandas primero, luego por header_original + ocurrencia
                 try:
-                    concepto = ConceptoLibro.objects.get(
+                    # Buscar por header_pandas (más específico)
+                    concepto = ConceptoLibro.objects.filter(
                         cliente=cierre.cliente,
                         erp=config_erp.erp,
-                        header_original=header
-                    )
+                        header_pandas=header
+                    ).first()
+                    
+                    # Si no se encuentra, buscar por header_original + ocurrencia
+                    if not concepto:
+                        # Extraer original de header (remover .1, .2, etc)
+                        import re
+                        match = re.match(r'^(.+)\.(\d+)$', header)
+                        if match:
+                            original = match.group(1)
+                            ocurrencia = int(match.group(2)) + 1
+                        else:
+                            original = header
+                        
+                        concepto = ConceptoLibro.objects.get(
+                            cliente=cierre.cliente,
+                            erp=config_erp.erp,
+                            header_original=original,
+                            ocurrencia=ocurrencia
+                        )
                     
                     concepto.categoria = categoria
                     concepto.es_identificador = es_identificador
@@ -304,9 +365,10 @@ class LibroService(BaseService):
                 activo=True
             )
             
-            # Crear dict {header: ConceptoLibro}
+            # Crear dict {header_pandas: ConceptoLibro} para mapeo correcto con duplicados
             conceptos_clasificados = {
-                c.header_original: c for c in conceptos_qs
+                c.header_pandas if c.header_pandas else c.header_original: c 
+                for c in conceptos_qs
             }
             
             # Procesar libro
@@ -390,13 +452,13 @@ class LibroService(BaseService):
     @classmethod
     def obtener_conceptos_pendientes(cls, archivo_erp: ArchivoERP) -> ServiceResult[List[Dict]]:
         """
-        Obtiene la lista de conceptos pendientes de clasificación.
+        Obtiene la lista de conceptos pendientes de clasificación con sugerencias.
         
         Args:
             archivo_erp: Archivo del libro
         
         Returns:
-            ServiceResult con lista de conceptos pendientes
+            ServiceResult con lista de conceptos pendientes, incluyendo sugerencias
         """
         try:
             cierre = archivo_erp.cierre
@@ -413,18 +475,142 @@ class LibroService(BaseService):
                 activo=True
             ).order_by('orden')
             
-            data = [
-                {
+            # Obtener sugerencias basadas en clasificaciones previas del mismo cliente/ERP
+            sugerencias = cls._obtener_sugerencias_clasificacion(cierre.cliente, config_erp.erp)
+            
+            data = []
+            for c in conceptos_pendientes:
+                concepto_dict = {
                     'id': c.id,
-                    'header': c.header_original,
+                    'header': c.header_pandas if c.header_pandas else c.header_original,
+                    'header_original': c.header_original,
+                    'header_pandas': c.header_pandas,
+                    'ocurrencia': c.ocurrencia,
+                    'es_duplicado': c.es_duplicado,
                     'orden': c.orden,
                     'categoria': c.categoria,
                 }
-                for c in conceptos_pendientes
-            ]
+                
+                # Agregar sugerencia si existe
+                if c.header_original in sugerencias:
+                    concepto_dict['sugerencia'] = sugerencias[c.header_original]
+                
+                data.append(concepto_dict)
             
             return ServiceResult.ok(data)
             
         except Exception as e:
             cls.get_logger().error(f"Error obteniendo conceptos pendientes: {e}")
             return ServiceResult.fail(str(e))
+    
+    @classmethod
+    def _obtener_sugerencias_clasificacion(cls, cliente, erp) -> Dict[str, Dict]:
+        """
+        Obtiene sugerencias de clasificación basadas en conceptos previamente clasificados.
+        
+        Args:
+            cliente: Cliente
+            erp: ERP
+        
+        Returns:
+            Dict {header_original: {'categoria': str, 'es_identificador': bool, 'frecuencia': int}}
+        """
+        # Obtener conceptos clasificados del mismo cliente/ERP
+        conceptos_clasificados = ConceptoLibro.objects.filter(
+            cliente=cliente,
+            erp=erp,
+            categoria__isnull=False,
+            activo=True
+        ).values('header_original', 'categoria', 'es_identificador')
+        
+        # Agrupar por header_original y contar frecuencia
+        sugerencias = {}
+        for c in conceptos_clasificados:
+            header = c['header_original']
+            if header not in sugerencias:
+                sugerencias[header] = {
+                    'categoria': c['categoria'],
+                    'es_identificador': c['es_identificador'],
+                    'frecuencia': 1
+                }
+            else:
+                sugerencias[header]['frecuencia'] += 1
+        
+        return sugerencias
+    
+    @classmethod
+    def aplicar_clasificacion_automatica(cls, archivo_erp: ArchivoERP, user) -> ServiceResult:
+        """
+        Aplica automáticamente las clasificaciones basadas en conceptos previamente clasificados.
+        
+        Args:
+            archivo_erp: Archivo del libro
+            user: Usuario que aplica la clasificación automática
+        
+        Returns:
+            ServiceResult con cantidad de conceptos clasificados automáticamente
+        """
+        logger = cls.get_logger()
+        
+        try:
+            cierre = archivo_erp.cierre
+            config_erp = cierre.cliente.configuraciones_erp.filter(activo=True).first()
+            
+            if not config_erp:
+                return ServiceResult.fail("Cliente no tiene ERP configurado")
+            
+            # Obtener sugerencias
+            sugerencias = cls._obtener_sugerencias_clasificacion(cierre.cliente, config_erp.erp)
+            
+            # Obtener conceptos pendientes
+            conceptos_pendientes = ConceptoLibro.objects.filter(
+                cliente=cierre.cliente,
+                erp=config_erp.erp,
+                categoria__isnull=True,
+                activo=True
+            )
+            
+            clasificados_auto = 0
+            for concepto in conceptos_pendientes:
+                if concepto.header_original in sugerencias:
+                    sugerencia = sugerencias[concepto.header_original]
+                    concepto.categoria = sugerencia['categoria']
+                    concepto.es_identificador = sugerencia['es_identificador']
+                    concepto.creado_por = user
+                    concepto.fecha_actualizacion = timezone.now()
+                    concepto.save()
+                    clasificados_auto += 1
+            
+            logger.info(f"Clasificados automáticamente {clasificados_auto} conceptos")
+            
+            # Actualizar contador en archivo
+            archivo_erp.headers_clasificados = ConceptoLibro.objects.filter(
+                cliente=cierre.cliente,
+                erp=config_erp.erp,
+                categoria__isnull=False
+            ).count()
+            
+            # Si todos están clasificados, cambiar estado a LISTO
+            if archivo_erp.todos_headers_clasificados:
+                archivo_erp.estado = EstadoArchivoLibro.LISTO
+            
+            archivo_erp.save(update_fields=['headers_clasificados', 'estado'])
+            
+            cls.log_action(
+                'clasificacion_automatica',
+                'archivo_erp',
+                archivo_erp.id,
+                user,
+                {'clasificados_auto': clasificados_auto}
+            )
+            
+            return ServiceResult.ok({
+                'clasificados_auto': clasificados_auto,
+                'total_clasificados': archivo_erp.headers_clasificados,
+                'total_headers': archivo_erp.headers_total,
+                'listo_para_procesar': archivo_erp.todos_headers_clasificados
+            })
+            
+        except Exception as e:
+            logger.error(f"Error en clasificación automática: {e}", exc_info=True)
+            return ServiceResult.fail(f"Error en clasificación automática: {str(e)}")

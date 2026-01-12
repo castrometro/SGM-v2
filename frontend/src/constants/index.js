@@ -455,6 +455,45 @@ export const erpTieneAPI = (erpSlug) => ERPS_CON_API.includes(erpSlug)
 export const getERPBadge = (erpSlug) => TIPO_ERP_BADGE[erpSlug] || TIPO_ERP_BADGE[TIPO_ERP.GENERIC]
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// CATEGORÍAS DE CONCEPTOS LIBRO
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Categorías para clasificar conceptos del Libro de Remuneraciones.
+ * Sincronizado con: backend/apps/validador/constants.py - CategoriaConceptoLibro
+ */
+export const CATEGORIA_CONCEPTO_LIBRO = Object.freeze({
+  haberes_imponibles: 'Haberes Imponibles',
+  haberes_no_imponibles: 'Haberes No Imponibles',
+  descuentos_legales: 'Descuentos Legales',
+  otros_descuentos: 'Otros Descuentos',
+  aportes_patronales: 'Aportes Patronales',
+  info_adicional: 'Información Adicional',
+  identificador: 'Identificador (RUT, etc.)',
+  ignorar: 'Ignorar',
+})
+
+/**
+ * Categorías monetarias (se suman para calcular totales)
+ */
+export const CATEGORIAS_MONETARIAS = Object.freeze([
+  'haberes_imponibles',
+  'haberes_no_imponibles',
+  'descuentos_legales',
+  'otros_descuentos',
+  'aportes_patronales',
+])
+
+/**
+ * Categorías no monetarias (no se procesan en cálculos)
+ */
+export const CATEGORIAS_NO_MONETARIAS = Object.freeze([
+  'info_adicional',
+  'identificador',
+  'ignorar',
+])
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // DEFAULT EXPORT
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -465,4 +504,5 @@ export default {
   TIPO_ARCHIVO_ERP,
   TIPO_ARCHIVO_ANALISTA,
   TIPO_ERP,
+  CATEGORIA_CONCEPTO_LIBRO,
 }
