@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import Modal from '../../../components/ui/Modal'
 import Button from '../../../components/ui/Button'
-import ClasificacionLibro from './ClasificacionLibro'
+import ClasificacionLibroV2 from './ClasificacionLibroV2'
 import api from '../../../api/axios'
 import { 
   ESTADO_ARCHIVO_LIBRO, 
@@ -99,13 +99,13 @@ const ClasificacionLibroModal = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Clasificación de Conceptos"
-      description="Clasifica los conceptos del libro de remuneraciones para poder procesarlo"
-      size="xl"
+      title="Clasificación de Conceptos del Libro"
+      description="Selecciona múltiples conceptos o arrástralos a las categorías para clasificarlos"
+      size="full"
     >
-      <div className="max-h-[70vh] overflow-y-auto -mx-6 px-6">
+      <div className="max-h-[75vh] overflow-y-auto -mx-6 px-6">
         {puedeClasificar || listoParaProcesar ? (
-          <ClasificacionLibro 
+          <ClasificacionLibroV2 
             archivoId={archivo.id}
             clienteId={archivo.cliente}
             cierreId={cierreId}
