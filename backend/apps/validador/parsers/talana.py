@@ -23,7 +23,37 @@ class TalanaLibroParser(BaseLibroParser):
     - Fila 0: Headers
     - Fila 1+: Datos de empleados
     - Columnas típicas: RUT, Nombre, [Conceptos variados según cliente]
+    
+    Los primeros 8 headers SIEMPRE son datos del empleado (no conceptos monetarios).
     """
+    
+    # ==========================================================================
+    # Headers fijos de Talana (primeras 8 columnas siempre son datos del empleado)
+    # ==========================================================================
+    # Estructura típica del libro de Talana:
+    #   0: Año
+    #   1: Mes
+    #   2: Rut de la Empresa
+    #   3: Rut del Trabajador  <- IDENTIFICADOR
+    #   4: Nombre
+    #   5: Apellido Paterno
+    #   6: Apellido Materno
+    #   7: Días Trabajados
+    #   8+: Conceptos monetarios (requieren clasificación manual)
+    
+    COLUMNAS_EMPLEADO_CANTIDAD = 8
+    
+    # Mapeo de índices a categoría para clasificación automática
+    CLASIFICACION_AUTO_EMPLEADO = {
+        0: ('info_adicional', False),  # Año
+        1: ('info_adicional', False),  # Mes
+        2: ('info_adicional', False),  # Rut de la Empresa
+        3: ('identificador', True),    # Rut del Trabajador -> IDENTIFICADOR
+        4: ('info_adicional', False),  # Nombre
+        5: ('info_adicional', False),  # Apellido Paterno
+        6: ('info_adicional', False),  # Apellido Materno
+        7: ('info_adicional', False),  # Días Trabajados
+    }
     
     @property
     def erp_codigo(self) -> str:
@@ -38,6 +68,43 @@ class TalanaLibroParser(BaseLibroParser):
     def fila_datos_inicio(self) -> int:
         """Datos empiezan en fila 1 (índice 1)."""
         return 1
+    
+    def get_clasificacion_automatica(self, orden: int) -> tuple:
+        """
+        Retorna la clasificación automática para un header según su posición.
+        
+        Los primeros 8 headers de Talana SIEMPRE son datos del empleado,
+        no conceptos monetarios. Esto reduce el ruido en la clasificación manual.
+        
+        Args:
+            orden: Índice/posición del header (0-based)
+        
+        Returns:
+            Tuple (categoria, es_identificador) o (None, None) si no aplica
+        
+        Examples:
+            >>> parser.get_clasificacion_automatica(0)
+            ('identificador', True)  # RUT
+            >>> parser.get_clasificacion_automatica(1)
+            ('info_adicional', False)  # Nombre
+            >>> parser.get_clasificacion_automatica(10)
+            (None, None)  # Header monetario, requiere clasificación manual
+        """
+        if orden < self.COLUMNAS_EMPLEADO_CANTIDAD:
+            return self.CLASIFICACION_AUTO_EMPLEADO.get(orden, ('info_adicional', False))
+        return (None, None)
+    
+    def es_header_empleado(self, orden: int) -> bool:
+        """
+        Verifica si un header (por posición) es dato de empleado.
+        
+        Args:
+            orden: Índice del header
+        
+        Returns:
+            True si es de las primeras 8 columnas (datos del empleado)
+        """
+        return orden < self.COLUMNAS_EMPLEADO_CANTIDAD
     
     def extraer_headers(self, archivo) -> List[str]:
         """

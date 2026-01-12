@@ -184,6 +184,38 @@ class BaseLibroParser(ABC):
         pass
     
     # =========================================================================
+    # Métodos opcionales para auto-clasificación (override en subclases)
+    # =========================================================================
+    
+    def get_clasificacion_automatica(self, orden: int) -> tuple:
+        """
+        Retorna clasificación automática para un header según su posición.
+        
+        Override en subclases para auto-clasificar headers conocidos
+        (ej: primeras N columnas siempre son datos del empleado).
+        
+        Args:
+            orden: Índice del header (0-based)
+        
+        Returns:
+            Tuple (categoria, es_identificador) o (None, None) si no aplica
+        """
+        return (None, None)
+    
+    def es_header_empleado(self, orden: int) -> bool:
+        """
+        Verifica si un header es dato de empleado (no monetario).
+        
+        Args:
+            orden: Índice del header
+        
+        Returns:
+            True si el header es dato del empleado
+        """
+        categoria, _ = self.get_clasificacion_automatica(orden)
+        return categoria is not None
+    
+    # =========================================================================
     # Métodos auxiliares (compartidos)
     # =========================================================================
     

@@ -80,19 +80,34 @@ class LibroService(BaseService):
             
             logger.info(f"Extraídos {len(headers)} headers de {archivo_erp}")
             
-            # Actualizar archivo
-            archivo_erp.headers_total = len(headers)
+            # Filtrar headers de empleado (no se registran en ConceptoLibro)
+            # Solo contamos los headers que requieren clasificación (conceptos monetarios)
+            if hasattr(parser, 'es_header_empleado'):
+                headers_monetarios = [
+                    h for i, h in enumerate(headers) 
+                    if not parser.es_header_empleado(i)
+                ]
+                headers_empleado_count = len(headers) - len(headers_monetarios)
+                logger.info(
+                    f"Omitiendo {headers_empleado_count} headers de empleado, "
+                    f"{len(headers_monetarios)} headers requieren clasificación"
+                )
+            else:
+                headers_monetarios = headers
+            
+            # Actualizar archivo con conteo de headers que requieren clasificación
+            archivo_erp.headers_total = len(headers_monetarios)
             archivo_erp.estado = EstadoArchivoLibro.PENDIENTE_CLASIFICACION
             archivo_erp.save(update_fields=['headers_total', 'estado'])
             
-            # Crear/actualizar conceptos en BD
+            # Crear/actualizar conceptos en BD (solo monetarios)
             cls._sincronizar_conceptos(archivo_erp, headers)
             
-            # Contar clasificados
+            # Contar clasificados (de los que se registraron en BD)
+            config_erp = cierre.cliente.configuraciones_erp.filter(activo=True).first()
             headers_clasificados = ConceptoLibro.objects.filter(
                 cliente=cierre.cliente,
-                erp=cierre.cliente.configuraciones_erp.filter(activo=True).first().erp,
-                header_original__in=headers,
+                erp=config_erp.erp,
                 categoria__isnull=False
             ).count()
             
@@ -100,11 +115,11 @@ class LibroService(BaseService):
             archivo_erp.save(update_fields=['headers_clasificados'])
             
             # Si todos están clasificados, cambiar a LISTO
-            if headers_clasificados >= len(headers):
+            if headers_clasificados >= len(headers_monetarios):
                 archivo_erp.estado = EstadoArchivoLibro.LISTO
                 archivo_erp.save(update_fields=['estado'])
             
-            return ServiceResult.ok(headers)
+            return ServiceResult.ok(headers_monetarios)
             
         except Exception as e:
             logger.error(f"Error extrayendo headers: {e}", exc_info=True)
@@ -153,8 +168,17 @@ class LibroService(BaseService):
                 for h in headers
             ]
         
+        # Contador de headers omitidos (datos de empleado)
+        headers_omitidos = 0
+        
         for orden, header_info in enumerate(headers_info):
-            # Crear o actualizar concepto
+            # Si el parser indica que es un header de empleado (no monetario), omitirlo
+            # Estos datos se usarán al procesar el libro para crear EmpleadoLibro
+            if hasattr(parser, 'es_header_empleado') and parser.es_header_empleado(orden):
+                headers_omitidos += 1
+                continue
+            
+            # Crear o actualizar concepto (solo conceptos monetarios)
             concepto, created = ConceptoLibro.objects.get_or_create(
                 cliente=cierre.cliente,
                 erp=config_erp.erp,
@@ -183,6 +207,11 @@ class LibroService(BaseService):
                 
                 if updated:
                     concepto.save(update_fields=['orden', 'header_pandas', 'es_duplicado'])
+        
+        if headers_omitidos:
+            cls.get_logger().info(
+                f"Omitidos {headers_omitidos} headers de empleado para {archivo_erp}"
+            )
 
     
     @classmethod
