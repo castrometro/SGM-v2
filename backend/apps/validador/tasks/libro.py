@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, name='validador.extraer_headers_libro')
-def extraer_headers_libro(self, archivo_erp_id: int):
+def extraer_headers_libro(self, archivo_erp_id: int, usuario_id: int = None):
     """
     Tarea Celery para extraer headers del Libro de Remuneraciones.
     
@@ -23,6 +23,7 @@ def extraer_headers_libro(self, archivo_erp_id: int):
     
     Args:
         archivo_erp_id: ID del ArchivoERP
+        usuario_id: ID del usuario que inició la tarea (para auditoría)
     
     Returns:
         dict con:
@@ -82,7 +83,7 @@ def extraer_headers_libro(self, archivo_erp_id: int):
 
 
 @shared_task(bind=True, name='validador.procesar_libro_remuneraciones')
-def procesar_libro_remuneraciones(self, archivo_erp_id: int):
+def procesar_libro_remuneraciones(self, archivo_erp_id: int, usuario_id: int = None):
     """
     Tarea Celery para procesar el Libro de Remuneraciones completo.
     
@@ -93,6 +94,7 @@ def procesar_libro_remuneraciones(self, archivo_erp_id: int):
     
     Args:
         archivo_erp_id: ID del ArchivoERP
+        usuario_id: ID del usuario que inició la tarea (para auditoría)
     
     Returns:
         dict con:

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3)
-def procesar_archivo_erp(self, archivo_id):
+def procesar_archivo_erp(self, archivo_id, usuario_id=None):
     """
     Procesa un archivo ERP (Libro de Remuneraciones o Movimientos).
     
@@ -19,6 +19,10 @@ def procesar_archivo_erp(self, archivo_id):
     3. Crea ConceptoCliente si son nuevos
     4. Extrae datos de empleados
     5. Actualiza estado del archivo y cierre
+    
+    Args:
+        archivo_id: ID del ArchivoERP a procesar
+        usuario_id: ID del usuario que inició la tarea (para auditoría)
     """
     from apps.validador.models import ArchivoERP
     

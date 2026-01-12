@@ -139,8 +139,8 @@ class LibroViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Iniciar tarea
-        task = extraer_headers_libro.delay(archivo_erp.id)
+        # Iniciar tarea con usuario para auditoría
+        task = extraer_headers_libro.delay(archivo_erp.id, usuario_id=request.user.id)
         
         return Response({
             'task_id': task.id,
@@ -296,8 +296,8 @@ class LibroViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Iniciar tarea
-        task = procesar_libro_remuneraciones.delay(archivo_erp.id)
+        # Iniciar tarea con usuario para auditoría
+        task = procesar_libro_remuneraciones.delay(archivo_erp.id, usuario_id=request.user.id)
         
         return Response({
             'task_id': task.id,

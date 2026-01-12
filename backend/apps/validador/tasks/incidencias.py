@@ -14,7 +14,7 @@ UMBRAL_VARIACION = Decimal('30')
 
 
 @shared_task(bind=True, max_retries=3)
-def detectar_incidencias(self, cierre_id):
+def detectar_incidencias(self, cierre_id, usuario_id=None):
     """
     Detecta incidencias comparando totales con el mes anterior.
     
@@ -24,6 +24,10 @@ def detectar_incidencias(self, cierre_id):
     Se excluyen:
     - Categoría "Informativos"
     - Categoría "Descuentos Legales"
+    
+    Args:
+        cierre_id: ID del Cierre a procesar
+        usuario_id: ID del usuario que inició la tarea (para auditoría)
     """
     from apps.validador.models import Cierre, Incidencia
     
@@ -180,9 +184,13 @@ def _detectar_incidencias_por_concepto(cierre, cierre_anterior):
 
 
 @shared_task
-def generar_consolidacion(cierre_id):
+def generar_consolidacion(cierre_id, usuario_id=None):
     """
     Genera los resúmenes consolidados después de que discrepancias = 0.
+    
+    Args:
+        cierre_id: ID del Cierre a consolidar
+        usuario_id: ID del usuario que inició la tarea (para auditoría)
     """
     from apps.validador.models import (
         Cierre,

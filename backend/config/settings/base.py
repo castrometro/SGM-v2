@@ -149,7 +149,10 @@ SIMPLE_JWT = {
 # Celery Configuration
 # ========================
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+
+# Results en PostgreSQL para auditoría (ISO 27001, Ley 21.719)
+# Redis se mantiene para cache en CACHES['default']
+CELERY_RESULT_BACKEND = 'django-db'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
@@ -157,6 +160,9 @@ CELERY_TIMEZONE = 'America/Santiago'
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutos
 CELERY_RESULT_EXTENDED = True
+
+# Retención de resultados (días) - default 90 para auditoría
+CELERY_RESULT_EXPIRES = int(os.environ.get('CELERY_RESULT_EXPIRES_DAYS', 90)) * 24 * 60 * 60  # segundos
 
 # Celery Beat
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'

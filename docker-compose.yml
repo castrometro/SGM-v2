@@ -90,7 +90,7 @@ services:
       - POSTGRES_PORT=${POSTGRES_PORT}
       - REDIS_URL=${REDIS_URL}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      # CELERY_RESULT_BACKEND usa django-db desde settings.py (auditoría PostgreSQL)
     volumes:
       - ./backend:/app
       - backend_static:/app/staticfiles
@@ -123,7 +123,7 @@ services:
       - POSTGRES_PORT=${POSTGRES_PORT}
       - REDIS_URL=${REDIS_URL}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      # CELERY_RESULT_BACKEND usa django-db desde settings.py (auditoría PostgreSQL)
     volumes:
       - ./backend:/app
       - backend_media:/app/media
@@ -151,7 +151,7 @@ services:
       - POSTGRES_PORT=${POSTGRES_PORT}
       - REDIS_URL=${REDIS_URL}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      # CELERY_RESULT_BACKEND usa django-db desde settings.py (auditoría PostgreSQL)
     volumes:
       - ./backend:/app
     depends_on:

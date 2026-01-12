@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3)
-def procesar_archivo_analista(self, archivo_id):
+def procesar_archivo_analista(self, archivo_id, usuario_id=None):
     """
     Procesa un archivo del Analista (Novedades, Asistencias, Finiquitos, Ingresos).
     
@@ -18,6 +18,10 @@ def procesar_archivo_analista(self, archivo_id):
     2. Extrae datos según tipo
     3. Crea registros correspondientes
     4. Actualiza estado del archivo y cierre
+    
+    Args:
+        archivo_id: ID del ArchivoAnalista a procesar
+        usuario_id: ID del usuario que inició la tarea (para auditoría)
     """
     from apps.validador.models import ArchivoAnalista
     

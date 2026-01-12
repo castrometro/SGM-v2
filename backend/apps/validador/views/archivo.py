@@ -45,9 +45,9 @@ class ArchivoERPViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         archivo = serializer.save()
         
-        # Disparar procesamiento asíncrono
+        # Disparar procesamiento asíncrono con usuario para auditoría
         from ..tasks import procesar_archivo_erp
-        procesar_archivo_erp.delay(archivo.id)
+        procesar_archivo_erp.delay(archivo.id, usuario_id=self.request.user.id)
     
     @action(detail=False, methods=['get'])
     def por_cierre(self, request):
@@ -102,9 +102,9 @@ class ArchivoAnalistaViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         archivo = serializer.save()
         
-        # Disparar procesamiento asíncrono
+        # Disparar procesamiento asíncrono con usuario para auditoría
         from ..tasks import procesar_archivo_analista
-        procesar_archivo_analista.delay(archivo.id)
+        procesar_archivo_analista.delay(archivo.id, usuario_id=self.request.user.id)
     
     @action(detail=False, methods=['get'])
     def por_cierre(self, request):

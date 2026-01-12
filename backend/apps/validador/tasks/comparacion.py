@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3)
-def ejecutar_comparacion(self, cierre_id):
+def ejecutar_comparacion(self, cierre_id, usuario_id=None):
     """
     Ejecuta la comparación entre datos ERP y datos del Analista.
     
@@ -19,6 +19,10 @@ def ejecutar_comparacion(self, cierre_id):
     2. Compara Movimientos ERP vs Movimientos Analista
     3. Genera Discrepancias
     4. Actualiza estado del cierre
+    
+    Args:
+        cierre_id: ID del Cierre a procesar
+        usuario_id: ID del usuario que inició la tarea (para auditoría)
     """
     from apps.validador.models import Cierre
     
