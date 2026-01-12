@@ -8,6 +8,7 @@ export {
   useUploadArchivoAnalista,
   useDeleteArchivoERP,
   useDeleteArchivoAnalista,
+  useProgresoLibro,
   TIPOS_ERP,
   TIPOS_ANALISTA,
 } from './useArchivos'

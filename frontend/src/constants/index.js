@@ -161,6 +161,28 @@ export const ESTADOS_INCIDENCIA_RESUELTOS = Object.freeze([
 ])
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ESTADOS DE ARCHIVOS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Estados de procesamiento de archivos (ERP y Analista)
+ * Sincronizado con backend: ArchivoBase.ESTADO_CHOICES
+ */
+export const ESTADO_ARCHIVO = Object.freeze({
+  SUBIDO: 'subido',
+  PROCESANDO: 'procesando',
+  PROCESADO: 'procesado',
+  ERROR: 'error',
+})
+
+/**
+ * Estados que indican que un archivo está siendo procesado (requiere polling)
+ */
+export const ESTADOS_ARCHIVO_PROCESANDO = Object.freeze([
+  ESTADO_ARCHIVO.PROCESANDO,
+])
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // TIPOS DE ARCHIVOS
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -188,6 +210,22 @@ export const TIPO_ARCHIVO_ANALISTA = Object.freeze({
 export const ARCHIVOS_ANALISTA_REQUERIDOS = Object.freeze([
   TIPO_ARCHIVO_ANALISTA.NOVEDADES,
 ])
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONFIGURACIÓN DE POLLING / QUERIES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Intervalos de polling para diferentes operaciones (en milisegundos)
+ */
+export const POLLING_INTERVALS = Object.freeze({
+  /** Polling para archivos en procesamiento */
+  ARCHIVO_PROCESANDO: 3000,
+  /** Polling para tareas Celery en progreso */
+  TAREA_CELERY: 2000,
+  /** Polling rápido para operaciones críticas */
+  RAPIDO: 1000,
+})
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURACIÓN DE UI

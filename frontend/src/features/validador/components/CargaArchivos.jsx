@@ -14,7 +14,8 @@ import {
   Trash2,
   RefreshCw,
   FileCheck,
-  Database
+  Database,
+  Users
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui'
 import Badge from '../../../components/ui/Badge'
@@ -27,9 +28,11 @@ import {
   useUploadArchivoAnalista,
   useDeleteArchivoERP,
   useDeleteArchivoAnalista,
+  useProgresoLibro,
   TIPOS_ERP,
   TIPOS_ANALISTA,
 } from '../hooks/useArchivos'
+import { TIPO_ARCHIVO_ERP, ESTADO_ARCHIVO } from '../../../constants'
 
 // Constantes para estados de archivo
 const ESTADO_STYLES = {
@@ -41,6 +44,76 @@ const ESTADO_STYLES = {
 
 // Formatos de archivo permitidos
 const FORMATOS_PERMITIDOS = ['.xlsx', '.xls', '.csv']
+
+/**
+ * Componente para mostrar progreso detallado del procesamiento del Libro
+ * Usa el endpoint específico de progreso con polling
+ */
+const ProgresoProcesamientoLibro = ({ archivoId }) => {
+  const { data: progreso, isLoading } = useProgresoLibro(archivoId, {
+    enabled: !!archivoId
+  })
+
+  if (isLoading || !progreso) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-secondary-400">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span>Iniciando procesamiento...</span>
+      </div>
+    )
+  }
+
+  const { estado, progreso: porcentaje = 0, empleados_procesados = 0, mensaje } = progreso
+
+  return (
+    <div className="mt-2 space-y-2">
+      {/* Barra de progreso */}
+      <div className="w-full bg-secondary-700 rounded-full h-2 overflow-hidden">
+        <div 
+          className={cn(
+            "h-full transition-all duration-500 ease-out",
+            estado === 'error' ? "bg-red-500" : "bg-primary-500"
+          )}
+          style={{ width: `${Math.min(porcentaje, 100)}%` }}
+        />
+      </div>
+      
+      {/* Info del progreso */}
+      <div className="flex items-center justify-between text-xs">
+        <div className="flex items-center gap-2 text-secondary-400">
+          {estado === 'procesando' && (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin text-primary-400" />
+              <span>{mensaje || 'Procesando...'}</span>
+            </>
+          )}
+          {estado === 'completado' && (
+            <>
+              <Check className="h-3 w-3 text-green-400" />
+              <span className="text-green-400">Procesamiento completado</span>
+            </>
+          )}
+          {estado === 'error' && (
+            <>
+              <AlertCircle className="h-3 w-3 text-red-400" />
+              <span className="text-red-400">{mensaje || 'Error en procesamiento'}</span>
+            </>
+          )}
+        </div>
+        
+        <div className="flex items-center gap-3 text-secondary-500">
+          {empleados_procesados > 0 && (
+            <span className="flex items-center gap-1">
+              <Users className="h-3 w-3" />
+              {empleados_procesados.toLocaleString()}
+            </span>
+          )}
+          <span className="font-medium text-secondary-300">{porcentaje}%</span>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 /**
  * Componente de zona de drop para un tipo de archivo específico
@@ -109,50 +182,64 @@ const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUpl
 
       {/* Archivo existente */}
       {archivo && !isUploading ? (
-        <div className="flex items-center gap-3 p-3 bg-secondary-800/50 rounded-lg border border-secondary-700">
-          <FileSpreadsheet className="h-8 w-8 text-primary-400 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-secondary-100 truncate">
-              {archivo.nombre_original}
-            </p>
-            <div className="flex items-center gap-2 text-xs text-secondary-400">
-              <span>v{archivo.version}</span>
-              <span>•</span>
-              <span>{archivo.filas_procesadas} filas</span>
-              {archivo.subido_por_nombre && (
-                <>
-                  <span>•</span>
-                  <span>{archivo.subido_por_nombre}</span>
-                </>
+        <div className="p-3 bg-secondary-800/50 rounded-lg border border-secondary-700">
+          <div className="flex items-center gap-3">
+            <FileSpreadsheet className="h-8 w-8 text-primary-400 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-secondary-100 truncate">
+                {archivo.nombre_original}
+              </p>
+              <div className="flex items-center gap-2 text-xs text-secondary-400">
+                <span>v{archivo.version}</span>
+                {archivo.estado !== ESTADO_ARCHIVO.PROCESANDO && (
+                  <>
+                    <span>•</span>
+                    <span>{archivo.filas_procesadas} filas</span>
+                  </>
+                )}
+                {archivo.subido_por_nombre && (
+                  <>
+                    <span>•</span>
+                    <span>{archivo.subido_por_nombre}</span>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              {/* Solo mostrar icono spinner si NO es libro (libro tiene su propio componente de progreso) */}
+              {IconEstado && !(tipo === TIPO_ARCHIVO_ERP.LIBRO_REMUNERACIONES && archivo.estado === ESTADO_ARCHIVO.PROCESANDO) && (
+                <IconEstado className={cn(
+                  "h-4 w-4",
+                  estadoInfo.animate && "animate-spin",
+                  estadoInfo.color === 'success' && "text-green-400",
+                  estadoInfo.color === 'danger' && "text-red-400",
+                  estadoInfo.color === 'warning' && "text-yellow-400",
+                  estadoInfo.color === 'info' && "text-blue-400",
+                )} />
               )}
+              <button
+                onClick={() => onDelete(archivo.id)}
+                className="p-1.5 rounded-lg text-secondary-400 hover:text-red-400 hover:bg-secondary-700 transition-colors"
+                title="Eliminar archivo"
+                disabled={archivo.estado === ESTADO_ARCHIVO.PROCESANDO}
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="p-1.5 rounded-lg text-secondary-400 hover:text-primary-400 hover:bg-secondary-700 transition-colors"
+                title="Reemplazar archivo"
+                disabled={archivo.estado === ESTADO_ARCHIVO.PROCESANDO}
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            {IconEstado && (
-              <IconEstado className={cn(
-                "h-4 w-4",
-                estadoInfo.animate && "animate-spin",
-                estadoInfo.color === 'success' && "text-green-400",
-                estadoInfo.color === 'danger' && "text-red-400",
-                estadoInfo.color === 'warning' && "text-yellow-400",
-                estadoInfo.color === 'info' && "text-blue-400",
-              )} />
-            )}
-            <button
-              onClick={() => onDelete(archivo.id)}
-              className="p-1.5 rounded-lg text-secondary-400 hover:text-red-400 hover:bg-secondary-700 transition-colors"
-              title="Eliminar archivo"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="p-1.5 rounded-lg text-secondary-400 hover:text-primary-400 hover:bg-secondary-700 transition-colors"
-              title="Reemplazar archivo"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </button>
-          </div>
+          
+          {/* Mostrar progreso detallado para Libro de Remuneraciones en procesamiento */}
+          {tipo === TIPO_ARCHIVO_ERP.LIBRO_REMUNERACIONES && archivo.estado === ESTADO_ARCHIVO.PROCESANDO && (
+            <ProgresoProcesamientoLibro archivoId={archivo.id} />
+          )}
         </div>
       ) : (
         /* Zona de drop */

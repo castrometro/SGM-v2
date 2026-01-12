@@ -20,6 +20,21 @@ Estándares y best practices para desarrollo con React.
 
 ---
 
+### [Audit & Compliance Instructions](./audit-compliance-instructions.md)
+Estándares de auditoría, trazabilidad y cumplimiento normativo.
+
+**Incluye:**
+- Marco normativo (ISO 27001, ISO 27701, Ley 21.719)
+- Arquitectura de auditoría (Celery Results + Limpieza)
+- Política de retención de datos
+- Queries de auditoría para reportes
+- Checklist de cumplimiento
+- Roadmap de implementación
+
+**Aplica a:** `backend/**/*.py` (especialmente tareas Celery)
+
+---
+
 ### [Documentation Guide](./DOCUMENTATION_GUIDE.md)
 Guía sobre dónde y cómo documentar en el proyecto.
 
@@ -41,6 +56,7 @@ Esta carpeta contiene **instrucciones específicas por tecnología** que complem
 |---------|-----------|
 | `../copilot-instructions.md` | Instrucciones **generales** del proyecto (stack, estructura, convenciones) |
 | `instructions/react-instructions.md` | Instrucciones **específicas de React** (hooks, patterns, optimization) |
+| `instructions/audit-compliance-instructions.md` | Instrucciones de **auditoría y cumplimiento** (ISO, Ley 21.719) |
 | `instructions/django-instructions.md` | *(Futuro)* Instrucciones específicas de Django |
 | `instructions/celery-instructions.md` | *(Futuro)* Instrucciones específicas de Celery |
 
@@ -93,4 +109,4 @@ applyTo: 'patron/de/archivos/**/*'
 
 ---
 
-**Última actualización:** 2026-01-08
+**Última actualización:** 2026-01-12

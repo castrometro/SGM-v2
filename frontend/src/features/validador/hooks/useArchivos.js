@@ -1,25 +1,54 @@
 /**
  * Hooks para gestión de archivos del validador (ERP y Analista)
+ * 
+ * Incluye polling automático cuando hay archivos en procesamiento.
+ * @module features/validador/hooks/useArchivos
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../api/axios'
+import { 
+  TIPO_ARCHIVO_ERP, 
+  TIPO_ARCHIVO_ANALISTA,
+  ESTADOS_ARCHIVO_PROCESANDO,
+  POLLING_INTERVALS,
+} from '../../../constants'
 
-// Tipos de archivos ERP
+// Tipos de archivos ERP con metadata para UI
 export const TIPOS_ERP = [
-  { value: 'libro_remuneraciones', label: 'Libro de Remuneraciones', descripcion: 'Archivo de libro de remuneraciones del ERP' },
-  { value: 'movimientos_mes', label: 'Movimientos del Mes', descripcion: 'Archivo de movimientos mensuales del ERP' },
+  { value: TIPO_ARCHIVO_ERP.LIBRO_REMUNERACIONES, label: 'Libro de Remuneraciones', descripcion: 'Archivo de libro de remuneraciones del ERP' },
+  { value: TIPO_ARCHIVO_ERP.MOVIMIENTOS_MES, label: 'Movimientos del Mes', descripcion: 'Archivo de movimientos mensuales del ERP' },
 ]
 
-// Tipos de archivos del Analista
+// Tipos de archivos del Analista con metadata para UI
 export const TIPOS_ANALISTA = [
-  { value: 'novedades', label: 'Novedades', descripcion: 'Novedades proporcionadas por el cliente' },
-  { value: 'asistencias', label: 'Asistencias', descripcion: 'Registro de asistencias del personal' },
-  { value: 'finiquitos', label: 'Finiquitos', descripcion: 'Documentos de finiquitos del período' },
-  { value: 'ingresos', label: 'Ingresos', descripcion: 'Nuevos ingresos del período' },
+  { value: TIPO_ARCHIVO_ANALISTA.NOVEDADES, label: 'Novedades', descripcion: 'Novedades proporcionadas por el cliente' },
+  { value: TIPO_ARCHIVO_ANALISTA.ASISTENCIAS, label: 'Asistencias', descripcion: 'Registro de asistencias del personal' },
+  { value: TIPO_ARCHIVO_ANALISTA.FINIQUITOS, label: 'Finiquitos', descripcion: 'Documentos de finiquitos del período' },
+  { value: TIPO_ARCHIVO_ANALISTA.INGRESOS, label: 'Ingresos', descripcion: 'Nuevos ingresos del período' },
 ]
 
 /**
- * Hook para obtener archivos ERP de un cierre
+ * Verifica si algún archivo está en estado de procesamiento.
+ * Usa las constantes centralizadas para determinar qué estados requieren polling.
+ * 
+ * @param {Object} archivos - Objeto con archivos indexados por tipo
+ * @returns {boolean} - true si hay al menos un archivo procesando
+ */
+const tieneArchivosProcesando = (archivos) => {
+  if (!archivos) return false
+  return Object.values(archivos).some(
+    archivo => archivo && ESTADOS_ARCHIVO_PROCESANDO.includes(archivo.estado)
+  )
+}
+
+/**
+ * Hook para obtener archivos ERP de un cierre.
+ * 
+ * Incluye polling automático cada POLLING_INTERVALS.ARCHIVO_PROCESANDO ms
+ * mientras haya archivos en estado de procesamiento.
+ * 
+ * @param {string|number} cierreId - ID del cierre
+ * @returns {UseQueryResult} - Resultado de React Query con archivos ERP
  */
 export const useArchivosERP = (cierreId) => {
   return useQuery({
@@ -33,11 +62,21 @@ export const useArchivosERP = (cierreId) => {
     enabled: !!cierreId,
     staleTime: 0,
     refetchOnMount: 'always',
+    refetchInterval: (query) => {
+      const data = query.state.data
+      return tieneArchivosProcesando(data) ? POLLING_INTERVALS.ARCHIVO_PROCESANDO : false
+    },
   })
 }
 
 /**
- * Hook para obtener archivos del Analista de un cierre
+ * Hook para obtener archivos del Analista de un cierre.
+ * 
+ * Incluye polling automático cada POLLING_INTERVALS.ARCHIVO_PROCESANDO ms
+ * mientras haya archivos en estado de procesamiento.
+ * 
+ * @param {string|number} cierreId - ID del cierre
+ * @returns {UseQueryResult} - Resultado de React Query con archivos del analista
  */
 export const useArchivosAnalista = (cierreId) => {
   return useQuery({
@@ -51,6 +90,10 @@ export const useArchivosAnalista = (cierreId) => {
     enabled: !!cierreId,
     staleTime: 0,
     refetchOnMount: 'always',
+    refetchInterval: (query) => {
+      const data = query.state.data
+      return tieneArchivosProcesando(data) ? POLLING_INTERVALS.ARCHIVO_PROCESANDO : false
+    },
   })
 }
 
@@ -148,6 +191,47 @@ export const useDeleteArchivoAnalista = () => {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['archivos-analista', variables.cierreId] })
+    },
+  })
+}
+
+/**
+ * Hook para obtener el progreso de procesamiento del Libro de Remuneraciones.
+ * 
+ * Este hook hace polling al endpoint específico de progreso que usa cache de Celery,
+ * proporcionando información detallada: porcentaje, empleados procesados, mensaje.
+ * 
+ * El polling se activa automáticamente cuando el estado es 'procesando' y se detiene
+ * cuando cambia a 'completado' o 'error'.
+ * 
+ * @param {string|number} archivoId - ID del archivo ERP (libro_remuneraciones)
+ * @param {Object} options - Opciones de configuración
+ * @param {boolean} options.enabled - Si el polling está activo (default: true)
+ * @returns {UseQueryResult} - Resultado con { estado, progreso, empleados_procesados, mensaje }
+ */
+export const useProgresoLibro = (archivoId, { enabled = true } = {}) => {
+  const queryClient = useQueryClient()
+  
+  return useQuery({
+    queryKey: ['progreso-libro', archivoId],
+    queryFn: async () => {
+      const { data } = await api.get(`/v1/validador/libro/${archivoId}/progreso/`)
+      return data
+    },
+    enabled: !!archivoId && enabled,
+    staleTime: 0,
+    refetchInterval: (query) => {
+      const data = query.state.data
+      // Solo hacer polling mientras está procesando
+      if (data?.estado === 'procesando') {
+        return POLLING_INTERVALS.TAREA_CELERY
+      }
+      // Cuando termina, invalidar los archivos para refrescar el estado
+      if (data?.estado === 'completado' || data?.estado === 'error') {
+        // Invalidar queries de archivos para que reflejen el nuevo estado
+        queryClient.invalidateQueries({ queryKey: ['archivos-erp'] })
+      }
+      return false
     },
   })
 }
