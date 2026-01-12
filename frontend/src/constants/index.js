@@ -177,10 +177,79 @@ export const ESTADO_ARCHIVO = Object.freeze({
 
 /**
  * Estados que indican que un archivo está siendo procesado (requiere polling)
+ * Incluye estados generales y específicos del libro de remuneraciones
  */
 export const ESTADOS_ARCHIVO_PROCESANDO = Object.freeze([
   ESTADO_ARCHIVO.PROCESANDO,
+  'extrayendo_headers', // ESTADO_ARCHIVO_LIBRO.EXTRAYENDO_HEADERS - definido después
 ])
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ESTADOS DE ARCHIVO LIBRO DE REMUNERACIONES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Estados específicos para el procesamiento del Libro de Remuneraciones.
+ * Sincronizado con: backend/apps/validador/constants.py - EstadoArchivoLibro
+ * 
+ * Flujo:
+ *   SUBIDO → EXTRAYENDO_HEADERS → PENDIENTE_CLASIFICACION → 
+ *   LISTO → PROCESANDO → PROCESADO
+ *                                         ↓
+ *                                       ERROR
+ */
+export const ESTADO_ARCHIVO_LIBRO = Object.freeze({
+  SUBIDO: 'subido',
+  EXTRAYENDO_HEADERS: 'extrayendo_headers',
+  PENDIENTE_CLASIFICACION: 'pendiente_clasificacion',
+  LISTO: 'listo',
+  PROCESANDO: 'procesando',
+  PROCESADO: 'procesado',
+  ERROR: 'error',
+})
+
+/**
+ * Estados que permiten clasificación de conceptos del libro
+ */
+export const ESTADOS_LIBRO_PUEDE_CLASIFICAR = Object.freeze([
+  ESTADO_ARCHIVO_LIBRO.PENDIENTE_CLASIFICACION,
+  ESTADO_ARCHIVO_LIBRO.LISTO,
+])
+
+/**
+ * Estados que permiten procesar el libro
+ */
+export const ESTADOS_LIBRO_PUEDE_PROCESAR = Object.freeze([
+  ESTADO_ARCHIVO_LIBRO.LISTO,
+])
+
+/**
+ * Estados que requieren acción del usuario (clasificación)
+ */
+export const ESTADOS_LIBRO_REQUIERE_ACCION = Object.freeze([
+  ESTADO_ARCHIVO_LIBRO.PENDIENTE_CLASIFICACION,
+])
+
+/**
+ * Verifica si el estado del libro permite clasificación
+ * @param {string} estado - Estado del archivo libro
+ * @returns {boolean}
+ */
+export const puedeClasificarLibro = (estado) => ESTADOS_LIBRO_PUEDE_CLASIFICAR.includes(estado)
+
+/**
+ * Verifica si el estado del libro permite procesamiento
+ * @param {string} estado - Estado del archivo libro
+ * @returns {boolean}
+ */
+export const puedeProcesarLibro = (estado) => ESTADOS_LIBRO_PUEDE_PROCESAR.includes(estado)
+
+/**
+ * Verifica si el libro requiere acción del usuario (clasificación pendiente)
+ * @param {string} estado - Estado del archivo libro
+ * @returns {boolean}
+ */
+export const libroRequiereAccion = (estado) => ESTADOS_LIBRO_REQUIERE_ACCION.includes(estado)
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TIPOS DE ARCHIVOS
@@ -543,4 +612,5 @@ export default {
   TIPO_ARCHIVO_ANALISTA,
   TIPO_ERP,
   CATEGORIA_CONCEPTO_LIBRO,
+  ESTADO_ARCHIVO_LIBRO,
 }

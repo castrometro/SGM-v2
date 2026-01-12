@@ -15,6 +15,8 @@ from ..serializers import (
     ArchivoAnalistaSerializer,
     ArchivoAnalistaUploadSerializer,
 )
+from ..constants import TipoArchivoERP
+from ..tasks import extraer_headers_libro, procesar_archivo_erp, procesar_archivo_analista
 from shared.audit import audit_create, audit_delete
 
 
@@ -47,9 +49,13 @@ class ArchivoERPViewSet(viewsets.ModelViewSet):
         archivo = serializer.save()
         audit_create(self.request, archivo)  # Registrar en auditoría
         
-        # Disparar procesamiento asíncrono con usuario para auditoría
-        from ..tasks import procesar_archivo_erp
-        procesar_archivo_erp.delay(archivo.id, usuario_id=self.request.user.id)
+        # Disparar tarea según el tipo de archivo
+        if archivo.tipo == TipoArchivoERP.LIBRO_REMUNERACIONES:
+            # El libro necesita extracción de headers y clasificación primero
+            extraer_headers_libro.delay(archivo.id, usuario_id=self.request.user.id)
+        else:
+            # Otros archivos se procesan directamente
+            procesar_archivo_erp.delay(archivo.id, usuario_id=self.request.user.id)
     
     def perform_destroy(self, instance):
         """Registrar eliminación en auditoría."""

@@ -47,7 +47,7 @@ class ArchivoBase(models.Model):
     nombre_original = models.CharField(max_length=255)
     
     estado = models.CharField(
-        max_length=20,
+        max_length=30,  # Aumentado para soportar 'pendiente_clasificacion' (24 chars)
         choices=ESTADO_CHOICES,
         default='subido'
     )

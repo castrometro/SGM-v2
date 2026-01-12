@@ -3,3 +3,4 @@
  */
 export { default as CargaArchivos } from './CargaArchivos'
 export { default as ClasificacionLibro } from './ClasificacionLibro'
+export { default as ClasificacionLibroModal } from './ClasificacionLibroModal'

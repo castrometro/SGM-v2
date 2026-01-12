@@ -11,6 +11,7 @@ const variants = {
   ghost: 'text-secondary-300 hover:bg-secondary-800 hover:text-secondary-100',
   danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
   success: 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500',
+  warning: 'bg-yellow-600 text-white hover:bg-yellow-700 focus:ring-yellow-500',
 }
 
 const sizes = {

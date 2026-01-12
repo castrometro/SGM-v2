@@ -20,14 +20,18 @@ class ArchivoERPSerializer(serializers.ModelSerializer):
             'archivo', 'nombre_original',
             'estado', 'estado_display',
             'filas_procesadas', 'errores_procesamiento',
+            'error_mensaje',  # Mensaje de error específico del libro
             'hojas_encontradas',
+            'headers_total', 'headers_clasificados',  # Campos específicos del libro
             'version', 'es_version_actual',
             'subido_por', 'subido_por_nombre',
             'fecha_subida', 'fecha_procesamiento',
         ]
         read_only_fields = [
             'estado', 'filas_procesadas', 'errores_procesamiento',
-            'hojas_encontradas', 'version', 'es_version_actual',
+            'error_mensaje', 'hojas_encontradas',
+            'headers_total', 'headers_clasificados',
+            'version', 'es_version_actual',
             'fecha_subida', 'fecha_procesamiento',
         ]
 

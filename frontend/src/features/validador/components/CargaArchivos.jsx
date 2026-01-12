@@ -15,7 +15,9 @@ import {
   RefreshCw,
   FileCheck,
   Database,
-  Users
+  Users,
+  Settings,
+  Tag
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui'
 import Badge from '../../../components/ui/Badge'
@@ -32,7 +34,14 @@ import {
   TIPOS_ERP,
   TIPOS_ANALISTA,
 } from '../hooks/useArchivos'
-import { TIPO_ARCHIVO_ERP, ESTADO_ARCHIVO } from '../../../constants'
+import ClasificacionLibroModal from './ClasificacionLibroModal'
+import { 
+  TIPO_ARCHIVO_ERP, 
+  ESTADO_ARCHIVO,
+  ESTADO_ARCHIVO_LIBRO,
+  libroRequiereAccion,
+  puedeClasificarLibro
+} from '../../../constants'
 
 // Constantes para estados de archivo
 const ESTADO_STYLES = {
@@ -40,6 +49,10 @@ const ESTADO_STYLES = {
   procesando: { color: 'warning', icon: Loader2, label: 'Procesando', animate: true },
   procesado: { color: 'success', icon: Check, label: 'Procesado' },
   error: { color: 'danger', icon: AlertCircle, label: 'Error' },
+  // Estados específicos del libro
+  extrayendo_headers: { color: 'warning', icon: Loader2, label: 'Extrayendo Headers', animate: true },
+  pendiente_clasificacion: { color: 'warning', icon: Tag, label: 'Requiere Clasificación' },
+  listo: { color: 'info', icon: FileCheck, label: 'Listo para Procesar' },
 }
 
 // Formatos de archivo permitidos
@@ -118,7 +131,7 @@ const ProgresoProcesamientoLibro = ({ archivoId }) => {
 /**
  * Componente de zona de drop para un tipo de archivo específico
  */
-const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUploading, progress, categoria }) => {
+const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUploading, progress, categoria, onClasificar }) => {
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef(null)
 
@@ -206,6 +219,23 @@ const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUpl
               </div>
             </div>
             <div className="flex items-center gap-1">
+              {/* Botón de clasificación para Libro de Remuneraciones */}
+              {tipo === TIPO_ARCHIVO_ERP.LIBRO_REMUNERACIONES && 
+               puedeClasificarLibro(archivo.estado) && 
+               onClasificar && (
+                <button
+                  onClick={() => onClasificar(archivo)}
+                  className={cn(
+                    "p-1.5 rounded-lg transition-colors flex items-center gap-1",
+                    libroRequiereAccion(archivo.estado)
+                      ? "text-warning-400 hover:text-warning-300 hover:bg-warning-500/20 animate-pulse"
+                      : "text-secondary-400 hover:text-primary-400 hover:bg-secondary-700"
+                  )}
+                  title="Clasificar conceptos"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+              )}
               {/* Solo mostrar icono spinner si NO es libro (libro tiene su propio componente de progreso) */}
               {IconEstado && !(tipo === TIPO_ARCHIVO_ERP.LIBRO_REMUNERACIONES && archivo.estado === ESTADO_ARCHIVO.PROCESANDO) && (
                 <IconEstado className={cn(
@@ -239,6 +269,46 @@ const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUpl
           {/* Mostrar progreso detallado para Libro de Remuneraciones en procesamiento */}
           {tipo === TIPO_ARCHIVO_ERP.LIBRO_REMUNERACIONES && archivo.estado === ESTADO_ARCHIVO.PROCESANDO && (
             <ProgresoProcesamientoLibro archivoId={archivo.id} />
+          )}
+          
+          {/* Alerta de clasificación requerida para Libro */}
+          {tipo === TIPO_ARCHIVO_ERP.LIBRO_REMUNERACIONES && libroRequiereAccion(archivo.estado) && (
+            <div className="mt-2 p-2 bg-warning-500/10 border border-warning-500/30 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Tag className="h-4 w-4 text-warning-400 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm text-warning-300 font-medium">
+                    Clasificación de conceptos pendiente
+                  </p>
+                  <p className="text-xs text-secondary-400">
+                    Clasifica los conceptos antes de procesar el libro
+                  </p>
+                </div>
+                {onClasificar && (
+                  <Button
+                    size="sm"
+                    variant="warning"
+                    onClick={() => onClasificar(archivo)}
+                    className="flex items-center gap-1"
+                  >
+                    <Settings className="h-3 w-3" />
+                    Clasificar
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* Indicador de listo para procesar */}
+          {tipo === TIPO_ARCHIVO_ERP.LIBRO_REMUNERACIONES && archivo.estado === ESTADO_ARCHIVO_LIBRO.LISTO && (
+            <div className="mt-2 p-2 bg-success-500/10 border border-success-500/30 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Check className="h-4 w-4 text-success-400" />
+                <p className="text-sm text-success-300">
+                  Conceptos clasificados. Listo para procesar.
+                </p>
+              </div>
+            </div>
           )}
         </div>
       ) : (
@@ -294,7 +364,20 @@ const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUpl
         className="hidden"
       />
 
-      {/* Errores de procesamiento */}
+      {/* Error de mensaje (específico del libro) */}
+      {archivo?.error_mensaje && (
+        <div className="p-2 bg-red-500/10 border border-red-500/20 rounded-lg">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-medium text-red-400">Error:</p>
+              <p className="text-xs text-red-300">{archivo.error_mensaje}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Errores de procesamiento (lista) */}
       {archivo?.errores_procesamiento?.length > 0 && (
         <div className="p-2 bg-red-500/10 border border-red-500/20 rounded-lg">
           <p className="text-xs font-medium text-red-400 mb-1">Errores de procesamiento:</p>
@@ -321,6 +404,10 @@ const CargaArchivos = ({ cierreId, clienteErp = null }) => {
   const [uploadingAnalista, setUploadingAnalista] = useState({})
   const [progressERP, setProgressERP] = useState({})
   const [progressAnalista, setProgressAnalista] = useState({})
+  
+  // Estado para modal de clasificación
+  const [clasificacionModalOpen, setClasificacionModalOpen] = useState(false)
+  const [archivoParaClasificar, setArchivoParaClasificar] = useState(null)
 
   // Queries para obtener archivos existentes
   const { data: archivosERP, isLoading: loadingERP, refetch: refetchERP } = useArchivosERP(cierreId)
@@ -331,6 +418,20 @@ const CargaArchivos = ({ cierreId, clienteErp = null }) => {
   const uploadAnalista = useUploadArchivoAnalista()
   const deleteERP = useDeleteArchivoERP()
   const deleteAnalista = useDeleteArchivoAnalista()
+
+  // Handler para abrir modal de clasificación
+  const handleOpenClasificacion = useCallback((archivo) => {
+    setArchivoParaClasificar(archivo)
+    setClasificacionModalOpen(true)
+  }, [])
+
+  // Handler para cerrar modal de clasificación
+  const handleCloseClasificacion = useCallback(() => {
+    setClasificacionModalOpen(false)
+    setArchivoParaClasificar(null)
+    // Refrescar archivos después de cerrar
+    refetchERP()
+  }, [refetchERP])
 
   // Handlers para archivos ERP
   const handleUploadERP = useCallback((tipo, archivo) => {
@@ -475,6 +576,7 @@ const CargaArchivos = ({ cierreId, clienteErp = null }) => {
                 isUploading={uploadingERP[tipo.value]}
                 progress={progressERP[tipo.value] || 0}
                 categoria="erp"
+                onClasificar={tipo.value === TIPO_ARCHIVO_ERP.LIBRO_REMUNERACIONES ? handleOpenClasificacion : undefined}
               />
             ))}
           </CardContent>
@@ -527,6 +629,20 @@ const CargaArchivos = ({ cierreId, clienteErp = null }) => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Modal de Clasificación del Libro */}
+      <ClasificacionLibroModal
+        isOpen={clasificacionModalOpen}
+        onClose={handleCloseClasificacion}
+        archivo={archivoParaClasificar}
+        cierreId={cierreId}
+        onClasificacionComplete={() => {
+          refetchERP()
+        }}
+        onProcesoIniciado={() => {
+          handleCloseClasificacion()
+        }}
+      />
     </div>
   )
 }
