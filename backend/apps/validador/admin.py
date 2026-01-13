@@ -107,9 +107,9 @@ class ConceptoClienteAdmin(admin.ModelAdmin):
 class ConceptoLibroAdmin(admin.ModelAdmin):
     list_display = [
         'header_original', 'cliente', 'erp', 'categoria',
-        'es_identificador', 'orden', 'activo'
+        'orden', 'activo'
     ]
-    list_filter = ['cliente', 'erp', 'categoria', 'activo', 'es_identificador']
+    list_filter = ['cliente', 'erp', 'categoria', 'activo']
     search_fields = ['header_original', 'header_normalizado', 'cliente__nombre_legal']
     raw_id_fields = ['cliente', 'erp', 'creado_por']
     list_editable = ['categoria', 'orden']
@@ -120,7 +120,7 @@ class ConceptoLibroAdmin(admin.ModelAdmin):
             'fields': ('cliente', 'erp', 'header_original', 'header_normalizado')
         }),
         ('Clasificación', {
-            'fields': ('categoria', 'es_identificador', 'orden')
+            'fields': ('categoria', 'orden')
         }),
         ('Estado', {
             'fields': ('activo', 'creado_por')

@@ -29,7 +29,6 @@ class ConceptoLibroSerializer(serializers.ModelSerializer):
             'header_normalizado',
             'categoria',
             'categoria_display',
-            'es_identificador',
             'orden',
             'activo',
             'clasificado',
@@ -63,7 +62,6 @@ class ConceptoLibroListSerializer(serializers.ModelSerializer):
             'es_duplicado',
             'categoria',
             'categoria_display',
-            'es_identificador',
             'orden',
             'clasificado',
         ]
@@ -77,8 +75,7 @@ class ConceptoLibroClasificarSerializer(serializers.Serializer):
         {
             "header": "SUELDO BASE",
             "ocurrencia": 1,
-            "categoria": "haberes_imponibles",
-            "es_identificador": false
+            "categoria": "haberes_imponibles"
         }
     """
     header = serializers.CharField(max_length=200, help_text="Nombre del header (puede ser header_pandas)")
@@ -88,7 +85,6 @@ class ConceptoLibroClasificarSerializer(serializers.Serializer):
         allow_null=True,
         required=False
     )
-    es_identificador = serializers.BooleanField(default=False)
     
     def validate_categoria(self, value):
         """Validar que la categoría sea válida."""
@@ -108,8 +104,7 @@ class ClasificacionMasivaSerializer(serializers.Serializer):
             "clasificaciones": [
                 {
                     "header": "SUELDO BASE",
-                    "categoria": "haberes_imponibles",
-                    "es_identificador": false
+                    "categoria": "haberes_imponibles"
                 },
                 ...
             ]

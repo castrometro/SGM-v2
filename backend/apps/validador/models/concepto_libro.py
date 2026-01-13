@@ -28,7 +28,6 @@ class ConceptoLibro(models.Model):
         ('otros_descuentos', 'Otros Descuentos'),
         ('aportes_patronales', 'Aportes Patronales'),
         ('info_adicional', 'Información Adicional'),
-        ('identificador', 'Identificador (RUT, etc.)'),
         ('ignorar', 'Ignorar'),
     ]
     
@@ -84,12 +83,6 @@ class ConceptoLibro(models.Model):
         blank=True,
         null=True,
         help_text='Categoría asignada al concepto'
-    )
-    
-    # Configuración especial
-    es_identificador = models.BooleanField(
-        default=False,
-        help_text='True si este header contiene RUT/ID del empleado'
     )
     
     orden = models.PositiveIntegerField(

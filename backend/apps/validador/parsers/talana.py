@@ -43,16 +43,20 @@ class TalanaLibroParser(BaseLibroParser):
     
     COLUMNAS_EMPLEADO_CANTIDAD = 8
     
+    # Índice de la columna que contiene el RUT del trabajador
+    COLUMNA_RUT_TRABAJADOR = 3
+    
     # Mapeo de índices a categoría para clasificación automática
+    # Todas las primeras 8 columnas son info_adicional (datos del empleado)
     CLASIFICACION_AUTO_EMPLEADO = {
-        0: ('info_adicional', False),  # Año
-        1: ('info_adicional', False),  # Mes
-        2: ('info_adicional', False),  # Rut de la Empresa
-        3: ('identificador', True),    # Rut del Trabajador -> IDENTIFICADOR
-        4: ('info_adicional', False),  # Nombre
-        5: ('info_adicional', False),  # Apellido Paterno
-        6: ('info_adicional', False),  # Apellido Materno
-        7: ('info_adicional', False),  # Días Trabajados
+        0: 'info_adicional',  # Año
+        1: 'info_adicional',  # Mes
+        2: 'info_adicional',  # Rut de la Empresa
+        3: 'info_adicional',  # Rut del Trabajador (identificador por posición)
+        4: 'info_adicional',  # Nombre
+        5: 'info_adicional',  # Apellido Paterno
+        6: 'info_adicional',  # Apellido Materno
+        7: 'info_adicional',  # Días Trabajados
     }
     
     @property
@@ -69,7 +73,7 @@ class TalanaLibroParser(BaseLibroParser):
         """Datos empiezan en fila 1 (índice 1)."""
         return 1
     
-    def get_clasificacion_automatica(self, orden: int) -> tuple:
+    def get_clasificacion_automatica(self, orden: int) -> str:
         """
         Retorna la clasificación automática para un header según su posición.
         
@@ -80,19 +84,19 @@ class TalanaLibroParser(BaseLibroParser):
             orden: Índice/posición del header (0-based)
         
         Returns:
-            Tuple (categoria, es_identificador) o (None, None) si no aplica
+            Categoría (str) o None si no aplica clasificación automática
         
         Examples:
             >>> parser.get_clasificacion_automatica(0)
-            ('identificador', True)  # RUT
-            >>> parser.get_clasificacion_automatica(1)
-            ('info_adicional', False)  # Nombre
+            'info_adicional'  # Año
+            >>> parser.get_clasificacion_automatica(3)
+            'info_adicional'  # RUT (identificador por posición)
             >>> parser.get_clasificacion_automatica(10)
-            (None, None)  # Header monetario, requiere clasificación manual
+            None  # Header monetario, requiere clasificación manual
         """
         if orden < self.COLUMNAS_EMPLEADO_CANTIDAD:
-            return self.CLASIFICACION_AUTO_EMPLEADO.get(orden, ('info_adicional', False))
-        return (None, None)
+            return self.CLASIFICACION_AUTO_EMPLEADO.get(orden, 'info_adicional')
+        return None
     
     def es_header_empleado(self, orden: int) -> bool:
         """
@@ -186,12 +190,7 @@ class TalanaLibroParser(BaseLibroParser):
             
             categoria = concepto.categoria
             
-            # Manejar campos especiales
-            if categoria == 'identificador' or concepto.es_identificador:
-                if not empleado_data['rut']:
-                    empleado_data['rut'] = self.normalizar_rut(valor)
-                continue
-            
+            # Manejar campos especiales - RUT se identifica por posición (columna 3)
             if categoria == 'ignorar':
                 continue
             

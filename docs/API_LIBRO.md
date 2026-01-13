@@ -23,7 +23,7 @@ Obtiene la lista de headers del libro con su estado de clasificación y sugerenc
   "headers_clasificados": 42,
   "progreso": 93,
   "tiene_duplicados": true,
-  "headers": ["RUT", "NOMBRE", "SUELDO", "BONO", "BONO.1", "..."],
+  "headers": ["SUELDO", "BONO", "BONO.1", "AFP", "..."]
   "conceptos": [
     {
       "id": 1,
@@ -33,7 +33,6 @@ Obtiene la lista de headers del libro con su estado de clasificación y sugerenc
       "es_duplicado": true,
       "categoria": "haberes_imponibles",
       "categoria_display": "Haberes Imponibles",
-      "es_identificador": false,
       "orden": 12,
       "clasificado": true,
       "sugerencia": null
@@ -46,12 +45,10 @@ Obtiene la lista de headers del libro con su estado de clasificación y sugerenc
       "es_duplicado": true,
       "categoria": null,
       "categoria_display": null,
-      "es_identificador": false,
       "orden": 13,
       "clasificado": false,
       "sugerencia": {
         "categoria": "haberes_no_imponibles",
-        "es_identificador": false,
         "frecuencia": 3
       }
     }
@@ -61,10 +58,13 @@ Obtiene la lista de headers del libro con su estado de clasificación y sugerenc
 
 **Campos importantes:**
 
+- `headers_total`: Solo cuenta headers de **conceptos monetarios** (no incluye datos del empleado)
 - `tiene_duplicados`: Indica si hay headers duplicados en el archivo
 - `sugerencia`: Presente solo en conceptos no clasificados, basada en historial
 - `header_pandas`: Nombre como pandas lo lee (con .1, .2 para duplicados)
 - `ocurrencia`: Número de ocurrencia si es duplicado (1, 2, 3...)
+
+> **Nota:** Los headers de datos del empleado (RUT, Nombre, Apellidos, etc.) se detectan automáticamente según el ERP y **no se incluyen** en la lista de conceptos a clasificar. Estos datos se usarán posteriormente al procesar el libro completo.
 
 ---
 
@@ -90,7 +90,6 @@ Obtiene solo los conceptos pendientes de clasificación con sus sugerencias.
       "categoria": null,
       "sugerencia": {
         "categoria": "haberes_no_imponibles",
-        "es_identificador": false,
         "frecuencia": 3
       }
     },
@@ -124,14 +123,12 @@ Clasifica uno o más conceptos del libro.
     {
       "header": "BONO.1",
       "ocurrencia": 2,
-      "categoria": "haberes_no_imponibles",
-      "es_identificador": false
+      "categoria": "haberes_no_imponibles"
     },
     {
       "header": "AFP",
       "ocurrencia": 1,
-      "categoria": "descuentos_legales",
-      "es_identificador": false
+      "categoria": "descuentos_legales"
     }
   ]
 }
@@ -312,10 +309,11 @@ CATEGORIAS = {
     'otros_descuentos': 'Otros Descuentos',
     'aportes_patronales': 'Aportes Patronales',
     'info_adicional': 'Información Adicional',
-    'identificador': 'Identificador (RUT, etc.)',
     'ignorar': 'Ignorar',
 }
 ```
+
+> **Nota:** La categoría `identificador` fue eliminada. Los campos de identificación del empleado (RUT, Nombre, etc.) se detectan automáticamente por el parser del ERP y no requieren clasificación manual.
 
 ---
 
@@ -325,11 +323,14 @@ CATEGORIAS = {
 1. POST /libro/{id}/extraer/
    └─> Retorna task_id
    └─> Archivo pasa a estado 'extrayendo_headers'
-   └─> Detecta duplicados y crea ConceptoLibro
+   └─> Detecta headers de empleado (RUT, Nombre, etc.) y los OMITE
+   └─> Detecta duplicados en headers monetarios
+   └─> Crea ConceptoLibro SOLO para conceptos monetarios
    └─> Archivo pasa a estado 'pendiente_clasificacion'
 
 2. GET /libro/{id}/pendientes/
    └─> Obtiene conceptos sin clasificar con sugerencias
+   └─> Solo muestra conceptos monetarios (100% clasificables)
 
 3. (Opcional) POST /libro/{id}/clasificar-auto/
    └─> Clasifica automáticamente según historial
@@ -344,7 +345,8 @@ CATEGORIAS = {
 5. POST /libro/{id}/procesar/
    └─> Retorna task_id
    └─> Archivo pasa a estado 'procesando'
-   └─> Crea EmpleadoLibro para cada empleado
+   └─> Lee datos del empleado (RUT, Nombre, etc.) por posición
+   └─> Crea EmpleadoLibro para cada empleado con sus conceptos
    └─> Archivo pasa a estado 'procesado'
 
 6. GET /libro/{id}/empleados/
@@ -376,8 +378,7 @@ curl -X POST \
       {
         "header": "BONO.1",
         "ocurrencia": 2,
-        "categoria": "haberes_no_imponibles",
-        "es_identificador": false
+        "categoria": "haberes_no_imponibles"
       }
     ]
   }'

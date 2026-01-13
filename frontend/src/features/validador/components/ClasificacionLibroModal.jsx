@@ -42,13 +42,23 @@ const ClasificacionLibroModal = ({
 }) => {
   const queryClient = useQueryClient()
   const [listoParaProcesar, setListoParaProcesar] = useState(false)
+  const [todosClasificados, setTodosClasificados] = useState(false)
 
   // Actualizar estado cuando cambia el archivo
   useEffect(() => {
     if (archivo?.estado === ESTADO_ARCHIVO_LIBRO.LISTO) {
       setListoParaProcesar(true)
+      setTodosClasificados(true)
     }
   }, [archivo?.estado])
+  
+  // Reset cuando se abre el modal
+  useEffect(() => {
+    if (isOpen && archivo?.estado !== ESTADO_ARCHIVO_LIBRO.LISTO) {
+      setListoParaProcesar(false)
+      setTodosClasificados(false)
+    }
+  }, [isOpen, archivo?.estado])
 
   // Mutation para iniciar procesamiento del libro
   const procesarMutation = useMutation({
@@ -74,6 +84,7 @@ const ClasificacionLibroModal = ({
   // Callback cuando se completa la clasificación
   const handleClasificacionComplete = () => {
     setListoParaProcesar(true)
+    setTodosClasificados(true)
     
     // Invalidar queries para refrescar estado
     queryClient.invalidateQueries(['archivos-erp', cierreId])
@@ -82,6 +93,14 @@ const ClasificacionLibroModal = ({
     
     if (onClasificacionComplete) {
       onClasificacionComplete()
+    }
+  }
+  
+  // Callback cuando cambia el estado de "todos clasificados"
+  const handleAllClassifiedChange = (allClassified) => {
+    setTodosClasificados(allClassified)
+    if (allClassified) {
+      setListoParaProcesar(true)
     }
   }
 
@@ -93,7 +112,8 @@ const ClasificacionLibroModal = ({
   if (!archivo) return null
 
   const puedeClasificar = puedeClasificarLibro(archivo.estado)
-  const puedeProcesar = puedeProcesarLibro(archivo.estado) || listoParaProcesar
+  // Solo puede procesar si todos los conceptos están clasificados (sin cambios pendientes)
+  const puedeProcesar = (puedeProcesarLibro(archivo.estado) || listoParaProcesar) && todosClasificados
 
   return (
     <Modal
@@ -110,6 +130,7 @@ const ClasificacionLibroModal = ({
             clienteId={archivo.cliente}
             cierreId={cierreId}
             onComplete={handleClasificacionComplete}
+            onAllClassifiedChange={handleAllClassifiedChange}
           />
         ) : (
           <div className="py-8 text-center">

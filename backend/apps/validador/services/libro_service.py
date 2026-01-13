@@ -231,8 +231,7 @@ class LibroService(BaseService):
                 [
                     {
                         'header': 'SUELDO BASE',
-                        'categoria': 'haberes_imponibles',
-                        'es_identificador': False
+                        'categoria': 'haberes_imponibles'
                     },
                     ...
                 ]
@@ -263,7 +262,6 @@ class LibroService(BaseService):
                 header = clas.get('header') or clas.get('header_pandas')
                 ocurrencia = clas.get('ocurrencia', 1)
                 categoria = clas.get('categoria')
-                es_identificador = clas.get('es_identificador', False)
                 
                 # Validar categoría
                 if not CategoriaConceptoLibro.es_valido(categoria):
@@ -299,7 +297,6 @@ class LibroService(BaseService):
                         )
                     
                     concepto.categoria = categoria
-                    concepto.es_identificador = es_identificador
                     concepto.creado_por = user
                     concepto.fecha_actualizacion = timezone.now()
                     concepto.save()
@@ -542,7 +539,7 @@ class LibroService(BaseService):
             erp: ERP
         
         Returns:
-            Dict {header_original: {'categoria': str, 'es_identificador': bool, 'frecuencia': int}}
+            Dict {header_original: {'categoria': str, 'frecuencia': int}}
         """
         # Obtener conceptos clasificados del mismo cliente/ERP
         conceptos_clasificados = ConceptoLibro.objects.filter(
@@ -550,7 +547,7 @@ class LibroService(BaseService):
             erp=erp,
             categoria__isnull=False,
             activo=True
-        ).values('header_original', 'categoria', 'es_identificador')
+        ).values('header_original', 'categoria')
         
         # Agrupar por header_original y contar frecuencia
         sugerencias = {}
@@ -559,7 +556,6 @@ class LibroService(BaseService):
             if header not in sugerencias:
                 sugerencias[header] = {
                     'categoria': c['categoria'],
-                    'es_identificador': c['es_identificador'],
                     'frecuencia': 1
                 }
             else:
@@ -604,7 +600,6 @@ class LibroService(BaseService):
                 if concepto.header_original in sugerencias:
                     sugerencia = sugerencias[concepto.header_original]
                     concepto.categoria = sugerencia['categoria']
-                    concepto.es_identificador = sugerencia['es_identificador']
                     concepto.creado_por = user
                     concepto.fecha_actualizacion = timezone.now()
                     concepto.save()

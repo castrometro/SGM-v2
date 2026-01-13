@@ -107,7 +107,9 @@ const ConceptoCard = ({
   isDragging,
   showSuggestion = true,
   showCategory = false,
-  compact = false
+  compact = false,
+  isMovedFromClassified = false,
+  onRestore = null
 }) => {
   const colors = concepto.categoria ? CATEGORIA_COLORS[concepto.categoria] : null
 
@@ -120,7 +122,9 @@ const ConceptoCard = ({
         isDragging && "opacity-50",
         isSelected 
           ? "border-primary-500 bg-primary-500/10" 
-          : "border-secondary-700 bg-secondary-800/50 hover:border-secondary-600 hover:bg-secondary-800",
+          : isMovedFromClassified
+            ? "border-warning-500/50 bg-warning-500/10"
+            : "border-secondary-700 bg-secondary-800/50 hover:border-secondary-600 hover:bg-secondary-800",
         compact && "py-1.5"
       )}
     >
@@ -155,6 +159,12 @@ const ConceptoCard = ({
           {concepto.es_duplicado && (
             <Badge color="warning" size="sm">#{concepto.ocurrencia}</Badge>
           )}
+          {isMovedFromClassified && (
+            <Badge color="warning" size="sm" className="flex items-center gap-1">
+              <Undo2 className="h-3 w-3" />
+              Reclasificar
+            </Badge>
+          )}
         </div>
         {!compact && concepto.header_pandas && concepto.header_pandas !== concepto.header_original && (
           <p className="text-xs text-secondary-500 truncate">
@@ -174,6 +184,20 @@ const ConceptoCard = ({
         <Badge color={colors.badge} size="sm" className="flex-shrink-0">
           {CATEGORIA_CONCEPTO_LIBRO[concepto.categoria]?.split(' ')[0]}
         </Badge>
+      )}
+      
+      {/* Botón restaurar para conceptos movidos */}
+      {isMovedFromClassified && onRestore && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onRestore(concepto)
+          }}
+          className="p-1 text-secondary-500 hover:text-success-400 transition-colors flex-shrink-0"
+          title="Restaurar clasificación original"
+        >
+          <Undo2 className="h-4 w-4" />
+        </button>
       )}
     </div>
   )
@@ -267,13 +291,14 @@ const CategoriaDropZone = ({
 /**
  * Componente principal de clasificación v2
  */
-const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) => {
+const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete, onAllClassifiedChange }) => {
   // Estados
   const [activeTab, setActiveTab] = useState('pendientes')
   const [busqueda, setBusqueda] = useState('')
   const [selectedItems, setSelectedItems] = useState(new Set())
   const [expandedCategories, setExpandedCategories] = useState(new Set())
   const [pendingChanges, setPendingChanges] = useState({}) // {conceptoKey: categoria}
+  const [movedToPending, setMovedToPending] = useState(new Set()) // conceptos clasificados movidos a pendientes para reclasificar
   
   const queryClient = useQueryClient()
 
@@ -311,6 +336,7 @@ const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) =>
       queryClient.invalidateQueries(['libro-pendientes', archivoId])
       setSelectedItems(new Set())
       setPendingChanges({})
+      setMovedToPending(new Set()) // Limpiar conceptos movidos
     },
   })
 
@@ -333,23 +359,40 @@ const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) =>
   }, [headersData])
 
   const conceptosPendientes = useMemo(() => {
-    if (!pendientesData?.conceptos) return []
-    let filtered = pendientesData.conceptos
+    let result = []
     
-    // Aplicar cambios pendientes (quitar los que ya clasificamos localmente)
-    filtered = filtered.filter(c => {
-      const key = c.header_pandas || c.header_original
-      return !pendingChanges[key]
-    })
+    // 1. Conceptos realmente pendientes (sin categoría en BD)
+    if (pendientesData?.conceptos) {
+      const filtered = pendientesData.conceptos.filter(c => {
+        const key = c.header_pandas || c.header_original
+        // Excluir los que ya clasificamos localmente
+        return !pendingChanges[key]
+      })
+      result = [...filtered]
+    }
     
-    // Filtrar por búsqueda
+    // 2. Agregar conceptos clasificados que fueron "movidos a pendientes" para reclasificar
+    if (movedToPending.size > 0 && conceptos.length > 0) {
+      const movedConceptos = conceptos.filter(c => {
+        const key = c.header_pandas || c.header_original
+        // Solo incluir si está en movedToPending Y no tiene ya una nueva clasificación pendiente
+        return movedToPending.has(key) && !pendingChanges[key]
+      }).map(c => ({
+        ...c,
+        _movedFromClassified: true // Marcador para UI
+      }))
+      result = [...result, ...movedConceptos]
+    }
+    
+    // 3. Filtrar por búsqueda
     if (busqueda) {
-      filtered = filtered.filter(c => 
+      result = result.filter(c => 
         c.header_original.toLowerCase().includes(busqueda.toLowerCase())
       )
     }
-    return filtered
-  }, [pendientesData, busqueda, pendingChanges])
+    
+    return result
+  }, [pendientesData, busqueda, pendingChanges, movedToPending, conceptos])
 
   const conceptosClasificados = useMemo(() => {
     return conceptos.filter(c => c.categoria || pendingChanges[c.header_pandas || c.header_original])
@@ -362,9 +405,12 @@ const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) =>
       grupos[cat] = []
     })
     
-    // Conceptos ya clasificados en BD
+    // Conceptos ya clasificados en BD (excluyendo los movidos a pendientes)
     conceptosClasificados.forEach(c => {
       const key = c.header_pandas || c.header_original
+      // Excluir si está movido a pendientes
+      if (movedToPending.has(key)) return
+      
       const categoria = pendingChanges[key] || c.categoria
       if (categoria && grupos[categoria]) {
         grupos[categoria].push({ ...c, categoria })
@@ -375,7 +421,9 @@ const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) =>
     Object.entries(pendingChanges).forEach(([key, categoria]) => {
       const yaExiste = grupos[categoria].some(c => (c.header_pandas || c.header_original) === key)
       if (!yaExiste) {
+        // Buscar en pendientes originales o en conceptos clasificados que fueron movidos
         const concepto = pendientesData?.conceptos?.find(c => (c.header_pandas || c.header_original) === key)
+          || conceptos.find(c => (c.header_pandas || c.header_original) === key)
         if (concepto) {
           grupos[categoria].push({ ...concepto, categoria })
         }
@@ -383,7 +431,7 @@ const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) =>
     })
     
     return grupos
-  }, [conceptosClasificados, pendingChanges, pendientesData])
+  }, [conceptosClasificados, pendingChanges, pendientesData, movedToPending, conceptos])
 
   // Handlers
   const handleSelect = useCallback((concepto) => {
@@ -417,11 +465,29 @@ const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) =>
     setSelectedItems(new Set())
   }, [])
 
-  const handleRemoveClassification = useCallback((concepto) => {
+  // Mover concepto clasificado a pendientes para reclasificar
+  const handleMoveToReclassify = useCallback((concepto) => {
     const key = concepto.header_pandas || concepto.header_original
+    
+    // Si el concepto tiene categoría en BD, agregarlo a movedToPending
+    if (concepto.categoria) {
+      setMovedToPending(prev => new Set([...prev, key]))
+    }
+    
+    // Si tenía un cambio pendiente, eliminarlo
     setPendingChanges(prev => {
       const next = { ...prev }
       delete next[key]
+      return next
+    })
+  }, [])
+  
+  // Restaurar concepto movido a su categoría original
+  const handleRestoreClassification = useCallback((concepto) => {
+    const key = concepto.header_pandas || concepto.header_original
+    setMovedToPending(prev => {
+      const next = new Set(prev)
+      next.delete(key)
       return next
     })
   }, [])
@@ -458,7 +524,6 @@ const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) =>
         header,
         ocurrencia: concepto?.ocurrencia || 1,
         categoria,
-        es_identificador: categoria === 'identificador'
       }
     })
     
@@ -516,12 +581,25 @@ const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) =>
   // Calcular estadísticas
   const stats = useMemo(() => {
     const total = headersData?.headers_total || 0
-    const clasificados = (headersData?.headers_clasificados || 0) + Object.keys(pendingChanges).length
+    // Clasificados = los de BD + cambios pendientes - los movidos a pendientes
+    const clasificadosEnBD = headersData?.headers_clasificados || 0
+    const nuevasClasificaciones = Object.keys(pendingChanges).length
+    const movidosAPendientes = movedToPending.size
+    const clasificados = clasificadosEnBD + nuevasClasificaciones - movidosAPendientes
     const pendientes = Math.max(0, total - clasificados)
     const progreso = total > 0 ? Math.round((clasificados / total) * 100) : 0
     const tieneSugerencias = (pendientesData?.conceptos || []).some(c => c.sugerencia && !pendingChanges[c.header_pandas || c.header_original])
     return { total, clasificados, pendientes, progreso, tieneSugerencias }
-  }, [headersData, pendientesData, pendingChanges])
+  }, [headersData, pendientesData, pendingChanges, movedToPending])
+
+  // Notificar al padre cuando cambia el estado de "todos clasificados"
+  useEffect(() => {
+    if (onAllClassifiedChange) {
+      // Solo considerar "todo clasificado" si no hay pendientes Y no hay cambios sin guardar
+      const allClassified = stats.pendientes === 0 && Object.keys(pendingChanges).length === 0 && movedToPending.size === 0
+      onAllClassifiedChange(allClassified)
+    }
+  }, [stats.pendientes, pendingChanges, movedToPending, onAllClassifiedChange])
 
   // Loading
   if (loadingHeaders || loadingPendientes) {
@@ -543,7 +621,7 @@ const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) =>
     )
   }
 
-  const hasPendingChanges = Object.keys(pendingChanges).length > 0
+  const hasPendingChanges = Object.keys(pendingChanges).length > 0 || movedToPending.size > 0
   const selectedConceptos = conceptosPendientes.filter(c => selectedItems.has(c.header_pandas || c.header_original))
 
   return (
@@ -693,6 +771,7 @@ const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) =>
               ) : (
                 conceptosPendientes.map((concepto) => {
                   const key = concepto.header_pandas || concepto.header_original
+                  const isMovedFromClassified = concepto._movedFromClassified || false
                   return (
                     <ConceptoCard
                       key={`${key}-${concepto.ocurrencia}`}
@@ -708,6 +787,8 @@ const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) =>
                       isDragging={draggedItems.some(d => (d.header_pandas || d.header_original) === key)}
                       showSuggestion
                       compact
+                      isMovedFromClassified={isMovedFromClassified}
+                      onRestore={isMovedFromClassified ? handleRestoreClassification : null}
                     />
                   )
                 })
@@ -760,7 +841,7 @@ const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) =>
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDropEvent}
-                  onRemove={handleRemoveClassification}
+                  onRemove={handleMoveToReclassify}
                   isExpanded={expandedCategories.has(value)}
                   onToggleExpand={() => handleToggleCategory(value)}
                 />
@@ -771,6 +852,15 @@ const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) =>
       ) : (
         /* Tab Clasificados */
         <div className="space-y-3">
+          {/* Tip de ayuda */}
+          <div className="flex items-center gap-2 p-2 bg-info-500/10 border border-info-500/20 rounded-lg text-xs text-info-300">
+            <MousePointerClick className="h-4 w-4 flex-shrink-0" />
+            <span>
+              <strong>Tip:</strong> Haz clic en el botón <X className="inline h-3 w-3" /> para mover un concepto 
+              a "Pendientes" y poder reclasificarlo.
+            </span>
+          </div>
+          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {Object.entries(CATEGORIA_CONCEPTO_LIBRO).map(([categoria, label]) => {
               const items = conceptosPorCategoria[categoria] || []
@@ -793,19 +883,39 @@ const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) =>
                   </CardHeader>
                   <CardContent className="py-2">
                     <div className="space-y-1 max-h-40 overflow-y-auto">
-                      {items.map((concepto) => (
-                        <div 
-                          key={`${concepto.header_pandas || concepto.header_original}-${concepto.ocurrencia}`}
-                          className="flex items-center justify-between py-1.5 px-2 bg-secondary-800/50 rounded text-sm"
-                        >
-                          <span className="text-secondary-200 truncate flex-1">
-                            {concepto.header_original}
-                            {concepto.es_duplicado && (
-                              <span className="text-secondary-500 ml-1">#{concepto.ocurrencia}</span>
+                      {items.map((concepto) => {
+                        const key = concepto.header_pandas || concepto.header_original
+                        const isPendingChange = !!pendingChanges[key]
+                        
+                        return (
+                          <div 
+                            key={`${key}-${concepto.ocurrencia}`}
+                            className={cn(
+                              "flex items-center justify-between py-1.5 px-2 rounded text-sm group",
+                              isPendingChange 
+                                ? "bg-warning-500/10 border border-warning-500/30" 
+                                : "bg-secondary-800/50 hover:bg-secondary-800"
                             )}
-                          </span>
-                        </div>
-                      ))}
+                          >
+                            <span className="text-secondary-200 truncate flex-1">
+                              {concepto.header_original}
+                              {concepto.es_duplicado && (
+                                <span className="text-secondary-500 ml-1">#{concepto.ocurrencia}</span>
+                              )}
+                              {isPendingChange && (
+                                <span className="text-warning-400 ml-2 text-xs">(reclasificado)</span>
+                              )}
+                            </span>
+                            <button
+                              onClick={() => handleMoveToReclassify(concepto)}
+                              className="p-1 text-secondary-500 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all"
+                              title="Mover a pendientes para reclasificar"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )
+                      })}
                     </div>
                   </CardContent>
                 </Card>
@@ -848,7 +958,10 @@ const ClasificacionLibroV2 = ({ archivoId, clienteId, cierreId, onComplete }) =>
           {hasPendingChanges && (
             <Button
               variant="secondary"
-              onClick={() => setPendingChanges({})}
+              onClick={() => {
+                setPendingChanges({})
+                setMovedToPending(new Set())
+              }}
               className="flex items-center gap-2"
             >
               <Undo2 className="h-4 w-4" />

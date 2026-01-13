@@ -240,7 +240,6 @@ class CategoriaConceptoLibro:
     OTROS_DESCUENTOS = 'otros_descuentos'
     APORTES_PATRONALES = 'aportes_patronales'
     INFO_ADICIONAL = 'info_adicional'
-    IDENTIFICADOR = 'identificador'
     IGNORAR = 'ignorar'
     
     CHOICES = [
@@ -250,7 +249,6 @@ class CategoriaConceptoLibro:
         (OTROS_DESCUENTOS, 'Otros Descuentos'),
         (APORTES_PATRONALES, 'Aportes Patronales'),
         (INFO_ADICIONAL, 'Información Adicional'),
-        (IDENTIFICADOR, 'Identificador (RUT, etc.)'),
         (IGNORAR, 'Ignorar'),
     ]
     
@@ -266,7 +264,6 @@ class CategoriaConceptoLibro:
     # Categorías que no se procesan
     CATEGORIAS_NO_MONETARIAS = [
         INFO_ADICIONAL,
-        IDENTIFICADOR,
         IGNORAR,
     ]
     
@@ -274,7 +271,7 @@ class CategoriaConceptoLibro:
         HABERES_IMPONIBLES, HABERES_NO_IMPONIBLES,
         DESCUENTOS_LEGALES, OTROS_DESCUENTOS,
         APORTES_PATRONALES, INFO_ADICIONAL,
-        IDENTIFICADOR, IGNORAR
+        IGNORAR
     ]
     
     @classmethod

@@ -1,5 +1,7 @@
 ## Plan: Clasificación de Headers del Libro de Remuneraciones (Talana)
 
+> **NOTA: Este plan ya fue implementado.** Los headers de identificación del empleado (RUT, Nombre, etc.) se detectan automáticamente por posición en el parser del ERP y se excluyen de la clasificación. Solo se clasifican conceptos monetarios (100%).
+
 **TL;DR**: Implementar el flujo completo donde el analista clasifica los headers del Libro de Remuneraciones, con reutilización automática de clasificaciones previas del mismo Cliente+ERP, y manejo inteligente de headers duplicados.
 
 ### Decisiones de Diseño
@@ -21,7 +23,8 @@
    - Solo crear nuevos ConceptoLibro para headers que no existen en ese Cliente+ERP
 
 3. **Agregar constante `CATEGORIA_CONCEPTO_LIBRO` al frontend** en [frontend/src/constants/index.js](frontend/src/constants/index.js)
-   - Sincronizar categorías del backend: `haberes_imponibles`, `haberes_no_imponibles`, `descuentos_legales`, `otros_descuentos`, `aportes_patronales`, `info_adicional`, `identificador`, `ignorar`
+   - Sincronizar categorías del backend: `haberes_imponibles`, `haberes_no_imponibles`, `descuentos_legales`, `otros_descuentos`, `aportes_patronales`, `info_adicional`, `ignorar`
+   - **NOTA:** `identificador` fue eliminado - los headers de empleado se detectan automáticamente
 
 4. **Crear hooks para gestión de headers del libro** en `frontend/src/features/validador/hooks/useLibro.js`
    - `useLibroHeaders(archivoId)` - GET headers y estado de clasificación
@@ -30,9 +33,8 @@
    - `useProgresoLibro(archivoId)` - GET con polling para progreso
 
 5. **Crear componente `ClasificacionConceptos.jsx`** en `frontend/src/features/validador/components/`
-   - Tabla con todos los headers del libro
+   - Tabla con todos los headers del libro (solo conceptos monetarios)
    - Dropdown para seleccionar categoría por header
-   - Checkbox para `es_identificador`
    - Indicador visual: clasificados vs pendientes (heredados de cierres anteriores en verde)
    - Botón "Guardar clasificación" que envía solo los cambios
 

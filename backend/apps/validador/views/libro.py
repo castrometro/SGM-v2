@@ -66,7 +66,6 @@ class LibroViewSet(viewsets.ViewSet):
                         "es_duplicado": false,
                         "categoria": "haberes_imponibles",
                         "categoria_display": "Haberes Imponibles",
-                        "es_identificador": false,
                         "orden": 2,
                         "clasificado": true,
                         "sugerencia": null
@@ -159,8 +158,7 @@ class LibroViewSet(viewsets.ViewSet):
                 "clasificaciones": [
                     {
                         "header": "SUELDO BASE",
-                        "categoria": "haberes_imponibles",
-                        "es_identificador": false
+                        "categoria": "haberes_imponibles"
                     },
                     ...
                 ]
@@ -248,7 +246,6 @@ class LibroViewSet(viewsets.ViewSet):
                         "categoria": null,
                         "sugerencia": {
                             "categoria": "haberes_imponibles",
-                            "es_identificador": false,
                             "frecuencia": 5
                         }
                     },

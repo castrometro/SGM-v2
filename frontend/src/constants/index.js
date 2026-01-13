@@ -576,7 +576,6 @@ export const CATEGORIA_CONCEPTO_LIBRO = Object.freeze({
   otros_descuentos: 'Otros Descuentos',
   aportes_patronales: 'Aportes Patronales',
   info_adicional: 'Información Adicional',
-  identificador: 'Identificador (RUT, etc.)',
   ignorar: 'Ignorar',
 })
 
@@ -596,7 +595,6 @@ export const CATEGORIAS_MONETARIAS = Object.freeze([
  */
 export const CATEGORIAS_NO_MONETARIAS = Object.freeze([
   'info_adicional',
-  'identificador',
   'ignorar',
 ])
 

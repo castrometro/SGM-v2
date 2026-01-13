@@ -23,6 +23,8 @@ Added fields to `ConceptoLibro`:
 - `ocurrencia`: Occurrence number (1, 2, 3...)
 - `es_duplicado`: Boolean flag indicating if this header is duplicated
 
+> **Note:** The `es_identificador` field was removed. Employee identification headers (RUT, Name, etc.) are now automatically detected by the ERP parser and excluded from classification.
+
 Changed unique constraint from `(cliente, erp, header_original)` to `(cliente, erp, header_original, ocurrencia)` to allow multiple entries for the same header name.
 
 **Migration:** `backend/apps/validador/migrations/0003_conceptolibro_duplicate_headers.py`
@@ -126,13 +128,18 @@ Detailed API endpoint documentation with:
 
 ### 1. Duplicate Header Detection
 ```python
-# Excel file has:
-["RUT", "BONO", "BONO", "BONO", "AFP"]
+# Excel file has (including employee data):
+["RUT", "NOMBRE", "BONO", "BONO", "BONO", "AFP"]
 
-# System detects and creates:
+# Parser detects RUT and NOMBRE as employee headers (by position)
+# System only creates ConceptoLibro for monetary concepts:
 ConceptoLibro(header_original="BONO", header_pandas="BONO", ocurrencia=1, es_duplicado=True)
 ConceptoLibro(header_original="BONO", header_pandas="BONO.1", ocurrencia=2, es_duplicado=True)
 ConceptoLibro(header_original="BONO", header_pandas="BONO.2", ocurrencia=3, es_duplicado=True)
+ConceptoLibro(header_original="AFP", header_pandas="AFP", ocurrencia=1, es_duplicado=False)
+
+# RUT and NOMBRE are NOT stored in ConceptoLibro
+# They will be used later when processing the full libro to create EmpleadoLibro
 ```
 
 ### 2. Independent Classification
@@ -177,13 +184,14 @@ EmpleadoLibro stores with unique keys:
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ 2. EXTRACT HEADERS (async)                                  │
-│    └─> Detect duplicates                                    │
-│    └─> Create ConceptoLibro for each (with occurrence)      │
+│    └─> Detect employee headers (RUT, Name) and SKIP them    │
+│    └─> Detect duplicates in monetary headers only           │
+│    └─> Create ConceptoLibro ONLY for monetary concepts      │
 │    └─> Estado='pendiente_clasificacion'                     │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 3. CLASSIFY CONCEPTS                                         │
+│ 3. CLASSIFY CONCEPTS (100% monetary)                         │
 │    a) View pending with suggestions                          │
 │       GET /libro/{id}/pendientes/                           │
 │                                                              │
@@ -198,7 +206,7 @@ EmpleadoLibro stores with unique keys:
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ 4. PROCESS LIBRO (async)                                     │
-│    └─> Read Excel                                           │
+│    └─> Read Excel including employee data by position       │
 │    └─> Map headers using pandas_name                        │
 │    └─> Create EmpleadoLibro for each employee               │
 │    └─> Estado='procesado'                                   │

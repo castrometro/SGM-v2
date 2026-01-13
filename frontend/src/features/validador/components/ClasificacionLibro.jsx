@@ -88,7 +88,6 @@ const ClasificacionLibro = ({ archivoId, clienteId, cierreId, onComplete }) => {
           header: concepto.header_pandas || concepto.header_original,
           ocurrencia: concepto.ocurrencia,
           categoria: concepto.sugerencia.categoria,
-          es_identificador: concepto.sugerencia.es_identificador,
         }
       }))
     }
@@ -105,7 +104,6 @@ const ClasificacionLibro = ({ archivoId, clienteId, cierreId, onComplete }) => {
           header: concepto.header_pandas || concepto.header_original,
           ocurrencia: concepto.ocurrencia,
           categoria: concepto.sugerencia.categoria,
-          es_identificador: concepto.sugerencia.es_identificador,
         }
       }
     })
@@ -113,7 +111,7 @@ const ClasificacionLibro = ({ archivoId, clienteId, cierreId, onComplete }) => {
   }
 
   // Cambiar clasificación de un concepto
-  const cambiarClasificacion = (concepto, categoria, esIdentificador = false) => {
+  const cambiarClasificacion = (concepto, categoria) => {
     const key = concepto.header_pandas || concepto.header_original
     setClasificaciones(prev => ({
       ...prev,
@@ -121,7 +119,6 @@ const ClasificacionLibro = ({ archivoId, clienteId, cierreId, onComplete }) => {
         header: key,
         ocurrencia: concepto.ocurrencia,
         categoria,
-        es_identificador: esIdentificador,
       }
     }))
   }

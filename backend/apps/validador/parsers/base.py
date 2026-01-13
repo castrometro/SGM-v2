@@ -198,9 +198,9 @@ class BaseLibroParser(ABC):
             orden: Índice del header (0-based)
         
         Returns:
-            Tuple (categoria, es_identificador) o (None, None) si no aplica
+            Categoría (str) o None si no aplica clasificación automática
         """
-        return (None, None)
+        return None
     
     def es_header_empleado(self, orden: int) -> bool:
         """
@@ -212,7 +212,7 @@ class BaseLibroParser(ABC):
         Returns:
             True si el header es dato del empleado
         """
-        categoria, _ = self.get_clasificacion_automatica(orden)
+        categoria = self.get_clasificacion_automatica(orden)
         return categoria is not None
     
     # =========================================================================

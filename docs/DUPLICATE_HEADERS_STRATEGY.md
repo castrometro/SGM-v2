@@ -118,8 +118,7 @@ Cliente X, Talana, "BONO" -> "haberes_imponibles" (5 veces)
 # Al encontrar "BONO" nuevamente:
 Sugerencia: {
     "categoria": "haberes_imponibles",
-    "frecuencia": 5,
-    "es_identificador": false
+    "frecuencia": 5
 }
 ```
 
@@ -212,23 +211,24 @@ EmpleadoLibro.datos_json:
 ### Caso 2: Headers únicos (sin duplicados)
 
 ```
-Excel: RUT | SUELDO | AFP | ISAPRE
+# Headers originales del Excel (incluye datos de empleado)
+Excel: RUT | NOMBRE | SUELDO | AFP | ISAPRE
 
-Pandas: RUT | SUELDO | AFP | ISAPRE
+# El parser detecta que RUT y NOMBRE son datos de empleado
+# Solo se crean ConceptoLibro para conceptos monetarios:
 
 ConceptoLibro:
-- (header_original="RUT", header_pandas="RUT", ocurrencia=1, es_duplicado=False)
 - (header_original="SUELDO", header_pandas="SUELDO", ocurrencia=1, es_duplicado=False)
 - (header_original="AFP", header_pandas="AFP", ocurrencia=1, es_duplicado=False)
 - (header_original="ISAPRE", header_pandas="ISAPRE", ocurrencia=1, es_duplicado=False)
 
-Clasificación:
-- RUT -> identificador
+Clasificación (solo conceptos monetarios):
 - SUELDO -> haberes_imponibles
 - AFP -> descuentos_legales
 - ISAPRE -> descuentos_legales
 
-(Funciona igual que antes, sin cambios en el flujo)
+# RUT y NOMBRE se usarán posteriormente al procesar el libro
+# para crear el registro EmpleadoLibro
 ```
 
 ## Migración
