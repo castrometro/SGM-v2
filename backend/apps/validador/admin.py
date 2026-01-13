@@ -13,6 +13,7 @@ from .models import (
     MapeoItemNovedades,
     EmpleadoCierre,
     EmpleadoLibro,
+    RegistroLibro,
     Discrepancia,
     Incidencia,
     ComentarioIncidencia,
@@ -150,38 +151,19 @@ class EmpleadoCierreAdmin(admin.ModelAdmin):
 
 @admin.register(EmpleadoLibro)
 class EmpleadoLibroAdmin(admin.ModelAdmin):
-    list_display = [
-        'rut', 'nombre', 'cierre', 'archivo_erp',
-        'total_haberes_imponibles', 'total_liquido'
-    ]
+    list_display = ['rut', 'nombre', 'cierre', 'archivo_erp', 'fecha_creacion']
     list_filter = ['cierre__cliente', 'cierre__periodo', 'archivo_erp__tipo']
     search_fields = ['rut', 'nombre']
     raw_id_fields = ['cierre', 'archivo_erp']
     readonly_fields = ['fecha_creacion']
-    
-    fieldsets = (
-        ('Identificación', {
-            'fields': ('cierre', 'archivo_erp', 'rut', 'nombre')
-        }),
-        ('Datos Adicionales', {
-            'fields': ('cargo', 'centro_costo', 'area', 'fecha_ingreso'),
-            'classes': ('collapse',)
-        }),
-        ('Detalle JSON', {
-            'fields': ('datos_json',)
-        }),
-        ('Totales', {
-            'fields': (
-                'total_haberes_imponibles', 'total_haberes_no_imponibles',
-                'total_descuentos_legales', 'total_otros_descuentos',
-                'total_aportes_patronales', 'total_liquido'
-            )
-        }),
-        ('Timestamps', {
-            'fields': ('fecha_creacion',),
-            'classes': ('collapse',)
-        }),
-    )
+
+
+@admin.register(RegistroLibro)
+class RegistroLibroAdmin(admin.ModelAdmin):
+    list_display = ['empleado', 'concepto', 'monto', 'cierre']
+    list_filter = ['cierre__cliente', 'cierre__periodo', 'concepto__categoria']
+    search_fields = ['empleado__rut', 'empleado__nombre', 'concepto__nombre']
+    raw_id_fields = ['cierre', 'empleado', 'concepto']
 
 
 @admin.register(Discrepancia)

@@ -110,6 +110,15 @@ def procesar_libro_remuneraciones(self, archivo_erp_id: int, usuario_id: int = N
     
     cache_key = f'libro_progreso_{archivo_erp_id}'
     
+    def progress_callback(progreso: int, mensaje: str, empleados: int = 0):
+        """Callback para actualizar progreso en cache."""
+        _actualizar_progreso(cache_key, {
+            'estado': 'procesando',
+            'progreso': progreso,
+            'empleados_procesados': empleados,
+            'mensaje': mensaje
+        })
+    
     try:
         logger.info(f"[Task {self.request.id}] Iniciando procesamiento de libro para archivo {archivo_erp_id}")
         
@@ -133,15 +142,8 @@ def procesar_libro_remuneraciones(self, archivo_erp_id: int, usuario_id: int = N
             'mensaje': 'Iniciando procesamiento...'
         })
         
-        # Actualizar progreso: leyendo archivo
-        _actualizar_progreso(cache_key, {
-            'estado': 'procesando',
-            'progreso': 10,
-            'mensaje': 'Leyendo archivo Excel...'
-        })
-        
-        # Procesar libro
-        result = LibroService.procesar_libro(archivo_erp)
+        # Procesar libro con callback de progreso
+        result = LibroService.procesar_libro(archivo_erp, progress_callback=progress_callback)
         
         if result.success:
             # Actualizar progreso: completado

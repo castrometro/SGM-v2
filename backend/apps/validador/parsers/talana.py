@@ -151,7 +151,13 @@ class TalanaLibroParser(BaseLibroParser):
             self.logger.error(f"Error extrayendo headers de Talana: {e}")
             raise
     
-    def parsear_empleado(self, fila: Dict, conceptos_clasificados: Dict, headers_info: List = None) -> Dict:
+    def parsear_empleado(
+        self, 
+        fila: Dict, 
+        conceptos_clasificados: Dict, 
+        headers_info: List = None,
+        columnas_ordenadas: List = None
+    ) -> Dict:
         """
         Parsea una fila de empleado del libro de Talana.
         
@@ -159,22 +165,64 @@ class TalanaLibroParser(BaseLibroParser):
             fila: Dict con los datos de la fila (columna -> valor)
             conceptos_clasificados: Dict de {pandas_name: ConceptoLibro}
             headers_info: Lista de HeaderInfo opcional (para logging)
+            columnas_ordenadas: Lista de nombres de columnas en el orden del DataFrame
         
         Returns:
-            Dict con datos del empleado estructurados
+            Dict con datos del empleado:
+            {
+                'rut': '12345678-9',
+                'nombre': 'Juan Pérez',
+                'registros': [
+                    {'concepto': ConceptoLibro, 'monto': Decimal(1500000)},
+                    ...
+                ]
+            }
         """
         empleado_data = {
             'rut': '',
             'nombre': '',
-            'cargo': '',
-            'centro_costo': '',
-            'area': '',
-            'fecha_ingreso': None,
-            'datos_json': {},
+            'registros': [],  # Lista de {concepto, monto}
         }
         
-        # Diccionario para acumular datos por categoría
-        categorias_data = {}
+        # Categorías válidas para guardar en RegistroLibro
+        CATEGORIAS_VALIDAS = {
+            'haberes_imponibles',
+            'haberes_no_imponibles',
+            'descuentos_legales',
+            'otros_descuentos',
+            'aportes_patronales',
+        }
+        
+        # Usar columnas ordenadas si se proporcionan, sino usar keys del dict
+        columnas = columnas_ordenadas if columnas_ordenadas else list(fila.keys())
+        
+        # Debug: mostrar primeras columnas para verificar estructura
+        if self.logger.isEnabledFor(10):  # DEBUG level
+            self.logger.debug(f"Primeras 5 columnas: {columnas[:5]}")
+        
+        # Extraer RUT por posición (columna 3)
+        if len(columnas) > self.COLUMNA_RUT_TRABAJADOR:
+            rut_col = columnas[self.COLUMNA_RUT_TRABAJADOR]
+            rut_valor = fila.get(rut_col)
+            
+            # Debug: mostrar valor de RUT encontrado
+            if self.logger.isEnabledFor(10):  # DEBUG level
+                self.logger.debug(f"Columna RUT '{rut_col}': valor='{rut_valor}'")
+            
+            if rut_valor and not pd.isna(rut_valor):
+                empleado_data['rut'] = self.normalizar_rut(rut_valor)
+        
+        # Extraer nombre concatenando columnas 4, 5, 6 (Nombre, Apellido Paterno, Materno)
+        nombre_partes = []
+        for idx in [4, 5, 6]:
+            if len(columnas) > idx:
+                col = columnas[idx]
+                valor = fila.get(col)
+                if valor and not pd.isna(valor):
+                    nombre_partes.append(self.limpiar_texto(str(valor)))
+        
+        if nombre_partes:
+            empleado_data['nombre'] = ' '.join(nombre_partes)
         
         # Procesar cada columna de la fila
         for pandas_name, valor in fila.items():
@@ -190,48 +238,19 @@ class TalanaLibroParser(BaseLibroParser):
             
             categoria = concepto.categoria
             
-            # Manejar campos especiales - RUT se identifica por posición (columna 3)
-            if categoria == 'ignorar':
+            # Solo procesar categorías válidas (no info_adicional, no ignorar)
+            if categoria not in CATEGORIAS_VALIDAS:
                 continue
             
-            if categoria == 'info_adicional':
-                # Detectar campos conocidos
-                header_lower = concepto.header_original.lower()
-                if 'nombre' in header_lower and not empleado_data['nombre']:
-                    empleado_data['nombre'] = self.limpiar_texto(valor)
-                elif 'cargo' in header_lower:
-                    empleado_data['cargo'] = self.limpiar_texto(valor)
-                elif 'centro' in header_lower and 'costo' in header_lower:
-                    empleado_data['centro_costo'] = self.limpiar_texto(valor)
-                elif 'area' in header_lower:
-                    empleado_data['area'] = self.limpiar_texto(valor)
-                continue
+            # Normalizar monto
+            monto = self.normalizar_monto(valor)
             
-            # Para categorías monetarias, acumular montos
-            if categoria in ['haberes_imponibles', 'haberes_no_imponibles',
-                            'descuentos_legales', 'otros_descuentos', 'aportes_patronales']:
-                
-                monto = self.normalizar_monto(valor)
-                
-                if categoria not in categorias_data:
-                    categorias_data[categoria] = {}
-                
-                # Usar un key único que combine el header original y la ocurrencia
-                key_concepto = concepto.header_original
-                if concepto.es_duplicado:
-                    key_concepto = f"{concepto.header_original} (#{concepto.ocurrencia})"
-                
-                categorias_data[categoria][key_concepto] = monto
-        
-        # Calcular totales por categoría
-        for categoria, conceptos in categorias_data.items():
-            total = sum(conceptos.values())
-            conceptos['total'] = total
-            empleado_data['datos_json'][categoria] = conceptos
-        
-        # Calcular totales finales
-        totales = self.calcular_totales_por_categoria(empleado_data['datos_json'])
-        empleado_data.update(totales)
+            # Solo guardar si monto > 0
+            if monto > 0:
+                empleado_data['registros'].append({
+                    'concepto': concepto,
+                    'monto': monto,
+                })
         
         return empleado_data
     
@@ -269,13 +288,18 @@ class TalanaLibroParser(BaseLibroParser):
             empleados = []
             errores_fila = []
             
+            # Obtener orden real de columnas del DataFrame
+            columnas_ordenadas = list(df.columns)
+            
             for idx, row in df.iterrows():
                 try:
                     # Convertir fila a dict
                     fila_dict = row.to_dict()
                     
-                    # Parsear empleado
-                    empleado_data = self.parsear_empleado(fila_dict, conceptos_clasificados, headers_info)
+                    # Parsear empleado (pasamos columnas ordenadas)
+                    empleado_data = self.parsear_empleado(
+                        fila_dict, conceptos_clasificados, headers_info, columnas_ordenadas
+                    )
                     
                     # Validar que tenga RUT (obligatorio)
                     if not empleado_data['rut']:

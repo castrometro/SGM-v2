@@ -8,6 +8,7 @@ from .concepto import CategoriaConcepto, ConceptoCliente, MapeoItemNovedades
 from .concepto_libro import ConceptoLibro
 from .empleado import EmpleadoCierre, RegistroConcepto, RegistroNovedades
 from .empleado_libro import EmpleadoLibro
+from .registro_libro import RegistroLibro
 from .movimiento import MovimientoMes, MovimientoAnalista
 from .discrepancia import Discrepancia
 from .incidencia import Incidencia, ComentarioIncidencia
@@ -32,6 +33,7 @@ __all__ = [
     'RegistroConcepto',
     'RegistroNovedades',
     'EmpleadoLibro',
+    'RegistroLibro',
     
     # Movimientos
     'MovimientoMes',

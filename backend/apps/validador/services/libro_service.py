@@ -343,17 +343,40 @@ class LibroService(BaseService):
     
     @classmethod
     @transaction.atomic
-    def procesar_libro(cls, archivo_erp: ArchivoERP) -> ServiceResult:
+    def procesar_libro(
+        cls, 
+        archivo_erp: ArchivoERP,
+        progress_callback: callable = None
+    ) -> ServiceResult:
         """
-        Procesa el libro completo y crea EmpleadoLibro para cada empleado.
+        Procesa el libro completo y crea EmpleadoLibro + RegistroLibro.
+        
+        Arquitectura Medallion - Capa Bronce:
+        - EmpleadoLibro: identificación del empleado (rut, nombre)
+        - RegistroLibro: un registro por cada concepto con monto > 0
         
         Args:
             archivo_erp: Archivo del libro a procesar
+            progress_callback: Función opcional para reportar progreso.
+                Signature: callback(progreso: int, mensaje: str, empleados: int = 0)
+                - progreso: 0-100
+                - mensaje: descripción del estado actual
+                - empleados: cantidad de empleados procesados (opcional)
         
         Returns:
             ServiceResult con estadísticas o error
         """
+        from apps.validador.models import RegistroLibro
+        
         logger = cls.get_logger()
+        
+        def report_progress(progreso: int, mensaje: str, empleados: int = 0):
+            """Helper para reportar progreso si hay callback."""
+            if progress_callback:
+                try:
+                    progress_callback(progreso, mensaje, empleados)
+                except Exception as e:
+                    logger.warning(f"Error en progress_callback: {e}")
         
         try:
             # Validar estado
@@ -369,6 +392,8 @@ class LibroService(BaseService):
                     "headers por clasificar"
                 )
             
+            report_progress(5, "Preparando procesamiento...")
+            
             # Actualizar estado
             archivo_erp.estado = EstadoArchivoLibro.PROCESANDO
             archivo_erp.save(update_fields=['estado'])
@@ -382,6 +407,8 @@ class LibroService(BaseService):
                 archivo_erp.error_mensaje = "No hay parser disponible"
                 archivo_erp.save(update_fields=['estado', 'error_mensaje'])
                 return ServiceResult.fail("No hay parser disponible")
+            
+            report_progress(10, "Leyendo archivo Excel...")
             
             # Obtener conceptos clasificados
             config_erp = cierre.cliente.configuraciones_erp.filter(activo=True).first()
@@ -397,6 +424,8 @@ class LibroService(BaseService):
                 for c in conceptos_qs
             }
             
+            report_progress(15, "Parseando empleados del libro...")
+            
             # Procesar libro
             result = parser.procesar_libro(
                 archivo_erp.archivo.path,
@@ -409,13 +438,18 @@ class LibroService(BaseService):
                 archivo_erp.save(update_fields=['estado', 'error_mensaje'])
                 return ServiceResult.fail(result.error)
             
-            # Limpiar empleados previos de este archivo
+            total_empleados = len(result.data)
+            report_progress(30, f"Procesando {total_empleados} empleados...", 0)
+            
+            # Limpiar empleados y registros previos de este archivo
             EmpleadoLibro.objects.filter(
                 cierre=cierre,
                 archivo_erp=archivo_erp
             ).delete()
             
-            # Crear EmpleadoLibro para cada empleado
+            report_progress(35, "Creando registros de empleados...")
+            
+            # 1. Crear EmpleadoLibro para cada empleado (solo rut, nombre)
             empleados_a_crear = []
             for emp_data in result.data:
                 empleado = EmpleadoLibro(
@@ -423,32 +457,75 @@ class LibroService(BaseService):
                     archivo_erp=archivo_erp,
                     rut=emp_data['rut'],
                     nombre=emp_data.get('nombre', ''),
-                    cargo=emp_data.get('cargo', ''),
-                    centro_costo=emp_data.get('centro_costo', ''),
-                    area=emp_data.get('area', ''),
-                    fecha_ingreso=emp_data.get('fecha_ingreso'),
-                    datos_json=emp_data['datos_json'],
-                    total_haberes_imponibles=emp_data.get('total_haberes_imponibles', Decimal('0')),
-                    total_haberes_no_imponibles=emp_data.get('total_haberes_no_imponibles', Decimal('0')),
-                    total_descuentos_legales=emp_data.get('total_descuentos_legales', Decimal('0')),
-                    total_otros_descuentos=emp_data.get('total_otros_descuentos', Decimal('0')),
-                    total_aportes_patronales=emp_data.get('total_aportes_patronales', Decimal('0')),
-                    total_liquido=emp_data.get('total_liquido', Decimal('0')),
                 )
                 empleados_a_crear.append(empleado)
             
-            # Bulk create
-            EmpleadoLibro.objects.bulk_create(empleados_a_crear, batch_size=500)
+            # Bulk create empleados (PostgreSQL retorna IDs)
+            empleados_creados = EmpleadoLibro.objects.bulk_create(
+                empleados_a_crear, 
+                batch_size=500
+            )
+            
+            report_progress(50, f"{len(empleados_creados)} empleados creados, procesando conceptos...", len(empleados_creados))
+            
+            # 2. Mapear RUT → EmpleadoLibro para asignar FK a registros
+            empleados_por_rut = {e.rut: e for e in empleados_creados}
+            
+            # 3. Crear RegistroLibro para cada concepto con monto > 0
+            registros_a_crear = []
+            total_registros = 0
+            empleados_procesados = 0
+            
+            for idx, emp_data in enumerate(result.data):
+                empleado = empleados_por_rut.get(emp_data['rut'])
+                if not empleado:
+                    continue
+                
+                for reg in emp_data.get('registros', []):
+                    registro = RegistroLibro(
+                        cierre=cierre,
+                        empleado=empleado,
+                        concepto=reg['concepto'],
+                        monto=reg['monto'],
+                    )
+                    registros_a_crear.append(registro)
+                    total_registros += 1
+                
+                empleados_procesados += 1
+                
+                # Reportar progreso cada 50 empleados o al final
+                if empleados_procesados % 50 == 0 or empleados_procesados == total_empleados:
+                    # Progreso de 50% a 90% proporcional a empleados procesados
+                    progreso = 50 + int((empleados_procesados / total_empleados) * 40)
+                    report_progress(
+                        progreso, 
+                        f"Procesando conceptos: {empleados_procesados}/{total_empleados} empleados...",
+                        empleados_procesados
+                    )
+            
+            report_progress(90, f"Guardando {total_registros} registros en base de datos...")
+            
+            # Bulk create registros
+            if registros_a_crear:
+                RegistroLibro.objects.bulk_create(
+                    registros_a_crear, 
+                    batch_size=1000
+                )
+            
+            report_progress(95, "Finalizando procesamiento...")
             
             # Actualizar archivo
-            archivo_erp.empleados_procesados = len(empleados_a_crear)
+            archivo_erp.empleados_procesados = len(empleados_creados)
             archivo_erp.estado = EstadoArchivoLibro.PROCESADO
             archivo_erp.fecha_procesamiento = timezone.now()
             archivo_erp.save(update_fields=[
                 'empleados_procesados', 'estado', 'fecha_procesamiento'
             ])
             
-            logger.info(f"Libro procesado: {len(empleados_a_crear)} empleados creados")
+            logger.info(
+                f"Libro procesado: {len(empleados_creados)} empleados, "
+                f"{total_registros} registros creados"
+            )
             
             cls.log_action(
                 'procesar_libro',
@@ -456,13 +533,17 @@ class LibroService(BaseService):
                 archivo_erp.id,
                 None,
                 {
-                    'empleados_procesados': len(empleados_a_crear),
+                    'empleados_procesados': len(empleados_creados),
+                    'registros_creados': total_registros,
                     'warnings': len(result.warnings)
                 }
             )
             
+            report_progress(100, "Procesamiento completado", len(empleados_creados))
+            
             return ServiceResult.ok({
-                'empleados_procesados': len(empleados_a_crear),
+                'empleados_procesados': len(empleados_creados),
+                'registros_creados': total_registros,
                 'total_filas': result.metadata.get('total_filas', 0),
                 'errores': result.metadata.get('errores', 0),
                 'warnings': result.warnings,
