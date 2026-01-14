@@ -72,13 +72,17 @@ export const PUEDEN_SER_SUPERVISORES = Object.freeze([
  * Estados del proceso de cierre de nómina.
  * 
  * Flujo principal:
- *   CARGA_ARCHIVOS → CLASIFICACION → MAPEO → COMPARACION →
+ *   CARGA_ARCHIVOS (Libro ERP) → CLASIFICACION_CONCEPTOS → 
+ *   CARGA_NOVEDADES (archivo cliente) → MAPEO_ITEMS → COMPARACION →
  *   CON_DISCREPANCIAS (loop) → CONSOLIDADO →
  *   DETECCION_INCIDENCIAS → REVISION_INCIDENCIAS → FINALIZADO
+ * 
+ * IMPORTANTE: El archivo de novedades se carga DESPUÉS de procesar el libro.
  */
 export const ESTADO_CIERRE = Object.freeze({
-  CARGA_ARCHIVOS: 'carga_archivos',
+  CARGA_ARCHIVOS: 'carga_archivos',  // Solo archivos ERP (Libro)
   CLASIFICACION_CONCEPTOS: 'clasificacion_conceptos',
+  CARGA_NOVEDADES: 'carga_novedades',  // Archivos del cliente (después del libro)
   MAPEO_ITEMS: 'mapeo_items',
   COMPARACION: 'comparacion',
   CON_DISCREPANCIAS: 'con_discrepancias',
@@ -96,6 +100,7 @@ export const ESTADO_CIERRE = Object.freeze({
 export const ESTADOS_CIERRE_ACTIVOS = Object.freeze([
   ESTADO_CIERRE.CARGA_ARCHIVOS,
   ESTADO_CIERRE.CLASIFICACION_CONCEPTOS,
+  ESTADO_CIERRE.CARGA_NOVEDADES,
   ESTADO_CIERRE.MAPEO_ITEMS,
   ESTADO_CIERRE.COMPARACION,
   ESTADO_CIERRE.CON_DISCREPANCIAS,
@@ -113,10 +118,19 @@ export const ESTADOS_CIERRE_FINALES = Object.freeze([
 ])
 
 /**
- * Estados que permiten edición de archivos
+ * Estados que permiten edición de archivos ERP
  */
 export const ESTADOS_CIERRE_EDITABLES = Object.freeze([
   ESTADO_CIERRE.CARGA_ARCHIVOS,
+  ESTADO_CIERRE.CON_DISCREPANCIAS,
+])
+
+/**
+ * Estados que permiten carga de archivos del cliente (novedades)
+ * Las novedades se cargan DESPUÉS de procesar el libro de remuneraciones
+ */
+export const ESTADOS_CARGA_NOVEDADES = Object.freeze([
+  ESTADO_CIERRE.CARGA_NOVEDADES,
   ESTADO_CIERRE.CON_DISCREPANCIAS,
 ])
 
@@ -326,7 +340,7 @@ export const TIPO_USUARIO_BADGE = Object.freeze({
  */
 export const ESTADO_CIERRE_BADGE = Object.freeze({
   [ESTADO_CIERRE.CARGA_ARCHIVOS]: {
-    label: 'Carga de Archivos',
+    label: 'Carga Libro ERP',
     variant: 'secondary',
     color: 'gray',
   },
@@ -334,6 +348,11 @@ export const ESTADO_CIERRE_BADGE = Object.freeze({
     label: 'Clasificación',
     variant: 'warning',
     color: 'yellow',
+  },
+  [ESTADO_CIERRE.CARGA_NOVEDADES]: {
+    label: 'Carga Novedades',
+    variant: 'info',
+    color: 'blue',
   },
   [ESTADO_CIERRE.MAPEO_ITEMS]: {
     label: 'Mapeo',

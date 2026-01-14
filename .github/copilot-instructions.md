@@ -82,13 +82,25 @@ Cierre.objects.select_related('cliente', 'analista').filter(...)
 
 ## Flujo de Cierre
 
-<!-- TODO: Documentar transiciones permitidas entre estados -->
+El flujo del cierre tiene dos fases de carga de archivos:
 
 ```
-carga_archivos → clasificacion_conceptos → mapeo_items → comparacion
-→ con_discrepancias (loop) → consolidado → deteccion_incidencias
-→ revision_incidencias → finalizado
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  FASE 1: LIBRO ERP              FASE 2: NOVEDADES CLIENTE                   │
+│  ──────────────────             ─────────────────────────                   │
+│  carga_archivos (ERP) ──────→ clasificacion_conceptos ──────→              │
+│                                                                             │
+│  carga_novedades (cliente) ──→ mapeo_items ──→ comparacion ──→             │
+│                                                                             │
+│  con_discrepancias (loop) ──→ consolidado ──→ deteccion_incidencias ──→    │
+│                                                                             │
+│  revision_incidencias ──→ finalizado                                        │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**IMPORTANTE**: Las novedades se cargan DESPUÉS del libro porque:
+- Necesitamos los conceptos clasificados para mapear items
+- La comparación requiere ambos procesados
 
 Estados definidos en `EstadoCierre.CHOICES`. Ver `apps/validador/constants.py` para grupos de estados.
 
@@ -161,4 +173,6 @@ Ver [docs/backend/AUDIT_SYSTEM.md](docs/backend/AUDIT_SYSTEM.md) para documentac
 - [frontend/src/hooks/usePermissions.js](frontend/src/hooks/usePermissions.js) - Hook de permisos
 - [frontend/src/contexts/AuthContext.jsx](frontend/src/contexts/AuthContext.jsx) - Auth provider
 - [docs/backend/SERVICE_LAYER.md](docs/backend/SERVICE_LAYER.md) - Guía detallada del Service Layer
+- [docs/backend/AUDIT_SYSTEM.md](docs/backend/AUDIT_SYSTEM.md) - Sistema de auditoría
+- [docs/backend/NOVEDADES.md](docs/backend/NOVEDADES.md) - Archivo de novedades del cliente
 - [docs/backend/AUDIT_SYSTEM.md](docs/backend/AUDIT_SYSTEM.md) - Sistema de auditoría

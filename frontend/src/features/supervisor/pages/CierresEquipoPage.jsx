@@ -26,17 +26,18 @@ import api from '../../../api/axios'
 
 // Estados del cierre y sus propiedades visuales
 const ESTADOS = {
-  carga_archivos: { label: 'Carga de Archivos', color: 'info', icon: Clock },
-  clasificacion: { label: 'Clasificación', color: 'info', icon: Clock },
-  mapeo_novedades: { label: 'Mapeo Novedades', color: 'info', icon: Clock },
+  carga_archivos: { label: 'Carga Libro ERP', color: 'info', icon: Clock },
+  clasificacion_conceptos: { label: 'Clasificación', color: 'info', icon: Clock },
+  carga_novedades: { label: 'Carga Novedades', color: 'info', icon: Clock },
+  mapeo_items: { label: 'Mapeo Items', color: 'info', icon: Clock },
   comparacion: { label: 'Comparación', color: 'warning', icon: Clock },
-  consolidacion: { label: 'Consolidación', color: 'warning', icon: Clock },
+  con_discrepancias: { label: 'Con Discrepancias', color: 'danger', icon: AlertTriangle },
+  consolidado: { label: 'Consolidado', color: 'success', icon: CheckCircle },
+  deteccion_incidencias: { label: 'Detectando Incidencias', color: 'warning', icon: Clock },
   revision_incidencias: { label: 'Revisión Incidencias', color: 'warning', icon: AlertTriangle },
-  aprobacion_supervisor: { label: 'Aprobación Supervisor', color: 'primary', icon: Clock },
-  generacion_reportes: { label: 'Generación Reportes', color: 'info', icon: Clock },
-  completado: { label: 'Completado', color: 'success', icon: CheckCircle },
   finalizado: { label: 'Finalizado', color: 'success', icon: CheckCircle },
-  rechazado: { label: 'Rechazado', color: 'danger', icon: XCircle },
+  cancelado: { label: 'Cancelado', color: 'secondary', icon: XCircle },
+  error: { label: 'Error', color: 'danger', icon: XCircle },
 }
 
 const getEstadoConfig = (estado) => {

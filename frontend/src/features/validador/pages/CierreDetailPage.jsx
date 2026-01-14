@@ -11,16 +11,18 @@ import Badge from '../../../components/ui/Badge'
 import { CargaArchivos } from '../components'
 
 const ESTADOS = {
-  carga_archivos: { label: 'Carga de Archivos', color: 'info', step: 1 },
-  clasificacion: { label: 'Clasificación', color: 'info', step: 2 },
-  mapeo_novedades: { label: 'Mapeo Novedades', color: 'info', step: 3 },
-  comparacion: { label: 'Comparación', color: 'warning', step: 4 },
-  consolidacion: { label: 'Consolidación', color: 'warning', step: 5 },
-  revision_incidencias: { label: 'Revisión Incidencias', color: 'warning', step: 6 },
-  aprobacion_supervisor: { label: 'Aprobación Supervisor', color: 'primary', step: 7 },
-  generacion_reportes: { label: 'Generación Reportes', color: 'info', step: 8 },
-  completado: { label: 'Completado', color: 'success', step: 9 },
-  rechazado: { label: 'Rechazado', color: 'danger', step: 0 },
+  carga_archivos: { label: 'Carga Libro ERP', color: 'info', step: 1 },
+  clasificacion_conceptos: { label: 'Clasificación', color: 'info', step: 2 },
+  carga_novedades: { label: 'Carga Novedades', color: 'info', step: 3 },
+  mapeo_items: { label: 'Mapeo Items', color: 'info', step: 4 },
+  comparacion: { label: 'Comparación', color: 'warning', step: 5 },
+  con_discrepancias: { label: 'Con Discrepancias', color: 'danger', step: 5 },
+  consolidado: { label: 'Consolidado', color: 'success', step: 6 },
+  deteccion_incidencias: { label: 'Detectando Incidencias', color: 'warning', step: 7 },
+  revision_incidencias: { label: 'Revisión Incidencias', color: 'warning', step: 8 },
+  finalizado: { label: 'Finalizado', color: 'success', step: 9 },
+  cancelado: { label: 'Cancelado', color: 'secondary', step: 0 },
+  error: { label: 'Error', color: 'danger', step: 0 },
 }
 
 const CierreDetailPage = () => {
@@ -53,9 +55,9 @@ const CierreDetailPage = () => {
   const renderStepContent = () => {
     switch (cierre.estado) {
       case 'carga_archivos':
-        return <CargaArchivos cierreId={id} clienteErp={cierre.cliente_erp} />
+        return <CargaArchivos cierreId={id} clienteErp={cierre.cliente_erp} soloERP={true} />
       
-      case 'clasificacion':
+      case 'clasificacion_conceptos':
         return (
           <PlaceholderStep 
             icon={Settings} 
@@ -64,12 +66,21 @@ const CierreDetailPage = () => {
           />
         )
       
-      case 'mapeo_novedades':
+      case 'carga_novedades':
+        return (
+          <PlaceholderStep 
+            icon={Upload} 
+            title="Carga de Novedades del Cliente" 
+            description="Suba el archivo de novedades proporcionado por el cliente para validar contra el libro..."
+          />
+        )
+      
+      case 'mapeo_items':
         return (
           <PlaceholderStep 
             icon={GitCompare} 
-            title="Mapeo de Novedades" 
-            description="Mapeando las novedades con los conceptos del ERP..."
+            title="Mapeo de Items" 
+            description="Mapeando los items de novedades con los conceptos del ERP..."
           />
         )
       
@@ -78,16 +89,36 @@ const CierreDetailPage = () => {
           <PlaceholderStep 
             icon={GitCompare} 
             title="Comparación" 
-            description="Comparando datos entre archivos ERP y del cliente..."
+            description="Comparando datos entre el Libro ERP y las Novedades del cliente..."
           />
         )
       
-      case 'consolidacion':
+      case 'con_discrepancias':
+        return (
+          <PlaceholderStep 
+            icon={AlertTriangle} 
+            title="Con Discrepancias" 
+            description="Se encontraron diferencias entre el libro y las novedades. Revise y corrija."
+            variant="danger"
+          />
+        )
+      
+      case 'consolidado':
         return (
           <PlaceholderStep 
             icon={FileText} 
-            title="Consolidación" 
-            description="Consolidando resultados de la comparación..."
+            title="Consolidado" 
+            description="Los datos han sido validados y consolidados exitosamente."
+            variant="success"
+          />
+        )
+      
+      case 'deteccion_incidencias':
+        return (
+          <PlaceholderStep 
+            icon={AlertTriangle} 
+            title="Detectando Incidencias" 
+            description="Analizando variaciones respecto a períodos anteriores..."
           />
         )
       
@@ -100,42 +131,35 @@ const CierreDetailPage = () => {
           />
         )
       
-      case 'aprobacion_supervisor':
+      case 'finalizado':
         return (
           <PlaceholderStep 
             icon={CheckCircle} 
-            title="Aprobación del Supervisor" 
-            description="El cierre está pendiente de aprobación del supervisor..."
-          />
-        )
-      
-      case 'generacion_reportes':
-        return (
-          <PlaceholderStep 
-            icon={FileBarChart} 
-            title="Generación de Reportes" 
-            description="Generando reportes finales del cierre..."
-          />
-        )
-      
-      case 'completado':
-        return (
-          <PlaceholderStep 
-            icon={CheckCircle} 
-            title="Cierre Completado" 
+            title="Cierre Finalizado" 
             description="El proceso de cierre ha finalizado exitosamente."
             variant="success"
           />
         )
       
-      case 'rechazado':
+      case 'cancelado':
         return (
           <PlaceholderStep 
             icon={AlertTriangle} 
-            title="Cierre Rechazado" 
-            description="El cierre ha sido rechazado y requiere correcciones."
+            title="Cierre Cancelado" 
+            description="El cierre ha sido cancelado."
+            variant="secondary"
+          />
+        )
+      
+      case 'error':
+        return (
+          <PlaceholderStep 
+            icon={AlertTriangle} 
+            title="Error en el Proceso" 
+            description="Ha ocurrido un error. Revise los logs y reintente."
             variant="danger"
           />
+        )
         )
       
       default:

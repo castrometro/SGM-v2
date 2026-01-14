@@ -14,9 +14,13 @@ class EstadoCierre:
     Estados del proceso de cierre de nómina.
     
     Flujo principal:
-        CARGA_ARCHIVOS → CLASIFICACION → MAPEO → COMPARACION →
+        CARGA_ARCHIVOS (Libro ERP) → CLASIFICACION_CONCEPTOS → 
+        CARGA_NOVEDADES (archivo cliente) → MAPEO_ITEMS → COMPARACION →
         CON_DISCREPANCIAS (loop) → CONSOLIDADO →
         DETECCION_INCIDENCIAS → REVISION_INCIDENCIAS → FINALIZADO
+    
+    IMPORTANTE: El archivo de novedades se carga DESPUÉS de procesar el libro.
+    Esto porque necesitamos los conceptos clasificados para el mapeo.
     
     Uso:
         from apps.validador.constants import EstadoCierre
@@ -28,8 +32,9 @@ class EstadoCierre:
             ...
     """
     # Estados del flujo
-    CARGA_ARCHIVOS = 'carga_archivos'
+    CARGA_ARCHIVOS = 'carga_archivos'  # Solo archivos ERP (Libro)
     CLASIFICACION_CONCEPTOS = 'clasificacion_conceptos'
+    CARGA_NOVEDADES = 'carga_novedades'  # Archivos del cliente (después del libro)
     MAPEO_ITEMS = 'mapeo_items'
     COMPARACION = 'comparacion'
     CON_DISCREPANCIAS = 'con_discrepancias'
@@ -42,8 +47,9 @@ class EstadoCierre:
     
     # Choices para campos de modelo Django
     CHOICES = [
-        (CARGA_ARCHIVOS, 'Carga de Archivos'),
+        (CARGA_ARCHIVOS, 'Carga de Archivos ERP'),
         (CLASIFICACION_CONCEPTOS, 'Clasificación de Conceptos'),
+        (CARGA_NOVEDADES, 'Carga de Novedades'),
         (MAPEO_ITEMS, 'Mapeo de Items'),
         (COMPARACION, 'Comparación en Proceso'),
         (CON_DISCREPANCIAS, 'Con Discrepancias'),
@@ -58,6 +64,7 @@ class EstadoCierre:
     ESTADOS_ACTIVOS = [
         CARGA_ARCHIVOS,
         CLASIFICACION_CONCEPTOS,
+        CARGA_NOVEDADES,
         MAPEO_ITEMS,
         COMPARACION,
         CON_DISCREPANCIAS,
@@ -68,8 +75,11 @@ class EstadoCierre:
     ESTADOS_FINALES = [FINALIZADO, CANCELADO]
     ESTADOS_CON_ERROR = [ERROR]
     
-    # Estados que permiten edición de archivos
+    # Estados que permiten edición de archivos ERP
     ESTADOS_EDITABLES = [CARGA_ARCHIVOS, CON_DISCREPANCIAS]
+    
+    # Estados que permiten carga de archivos del cliente (novedades)
+    ESTADOS_CARGA_NOVEDADES = [CARGA_NOVEDADES, CON_DISCREPANCIAS]
     
     # Estados que requieren acción del supervisor
     ESTADOS_REQUIEREN_SUPERVISOR = [REVISION_INCIDENCIAS]
@@ -81,8 +91,8 @@ class EstadoCierre:
     ESTADOS_PUEDEN_FINALIZAR = [CONSOLIDADO, REVISION_INCIDENCIAS, DETECCION_INCIDENCIAS]
     
     ALL = [
-        CARGA_ARCHIVOS, CLASIFICACION_CONCEPTOS, MAPEO_ITEMS,
-        COMPARACION, CON_DISCREPANCIAS, CONSOLIDADO,
+        CARGA_ARCHIVOS, CLASIFICACION_CONCEPTOS, CARGA_NOVEDADES,
+        MAPEO_ITEMS, COMPARACION, CON_DISCREPANCIAS, CONSOLIDADO,
         DETECCION_INCIDENCIAS, REVISION_INCIDENCIAS,
         FINALIZADO, CANCELADO, ERROR,
     ]
