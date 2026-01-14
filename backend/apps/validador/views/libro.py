@@ -293,8 +293,15 @@ class LibroViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Iniciar tarea con usuario para auditoría
-        task = procesar_libro_remuneraciones.delay(archivo_erp.id, usuario_id=request.user.id)
+        # Capturar IP del cliente para auditoría
+        ip_address = self._get_client_ip(request)
+        
+        # Iniciar tarea con usuario e IP para auditoría
+        task = procesar_libro_remuneraciones.delay(
+            archivo_erp.id, 
+            usuario_id=request.user.id,
+            ip_address=ip_address
+        )
         
         return Response({
             'task_id': task.id,
@@ -376,3 +383,14 @@ class LibroViewSet(viewsets.ViewSet):
         
         serializer = EmpleadoLibroListSerializer(empleados, many=True)
         return Response(serializer.data)
+
+    def _get_client_ip(self, request):
+        """
+        Extrae la IP del cliente considerando proxies.
+        
+        Usado para pasar la IP a tareas Celery para auditoría.
+        """
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            return x_forwarded_for.split(',')[0].strip()
+        return request.META.get('REMOTE_ADDR')

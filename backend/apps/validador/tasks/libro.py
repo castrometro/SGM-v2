@@ -10,6 +10,9 @@ import logging
 from celery import shared_task
 from django.core.cache import cache
 
+from shared.audit import audit_action_celery
+from apps.core.constants import AccionAudit
+
 logger = logging.getLogger(__name__)
 
 
@@ -83,7 +86,7 @@ def extraer_headers_libro(self, archivo_erp_id: int, usuario_id: int = None):
 
 
 @shared_task(bind=True, name='validador.procesar_libro_remuneraciones')
-def procesar_libro_remuneraciones(self, archivo_erp_id: int, usuario_id: int = None):
+def procesar_libro_remuneraciones(self, archivo_erp_id: int, usuario_id: int = None, ip_address: str = None):
     """
     Tarea Celery para procesar el Libro de Remuneraciones completo.
     
@@ -95,6 +98,7 @@ def procesar_libro_remuneraciones(self, archivo_erp_id: int, usuario_id: int = N
     Args:
         archivo_erp_id: ID del ArchivoERP
         usuario_id: ID del usuario que inició la tarea (para auditoría)
+        ip_address: IP del cliente que inició la tarea (para auditoría)
     
     Returns:
         dict con:
@@ -153,6 +157,21 @@ def procesar_libro_remuneraciones(self, archivo_erp_id: int, usuario_id: int = N
                 'empleados_procesados': result.data['empleados_procesados'],
                 'mensaje': 'Procesamiento completado exitosamente'
             })
+            
+            # Registrar auditoría del procesamiento exitoso
+            audit_action_celery(
+                usuario_id=usuario_id,
+                accion=AccionAudit.PROCESAR,
+                instancia=archivo_erp,
+                datos_anteriores={'estado': 'listo'},
+                extra={
+                    'estado': 'procesado',
+                    'empleados_procesados': result.data['empleados_procesados'],
+                    'total_filas': result.data['total_filas'],
+                    'errores': result.data['errores'],
+                },
+                ip_address=ip_address,
+            )
             
             logger.info(
                 f"[Task {self.request.id}] Libro procesado exitosamente: "

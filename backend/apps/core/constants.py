@@ -179,6 +179,7 @@ class AccionAudit:
     LOGIN = 'login'
     LOGOUT = 'logout'
     EXPORT = 'export'
+    PROCESAR = 'procesar'  # Procesamiento de archivos (ej: libro de remuneraciones)
     
     CHOICES = [
         (CREATE, 'Crear'),
@@ -187,9 +188,10 @@ class AccionAudit:
         (LOGIN, 'Inicio de sesión'),
         (LOGOUT, 'Cierre de sesión'),
         (EXPORT, 'Exportación'),
+        (PROCESAR, 'Procesar'),
     ]
     
-    ALL = [CREATE, UPDATE, DELETE, LOGIN, LOGOUT, EXPORT]
+    ALL = [CREATE, UPDATE, DELETE, LOGIN, LOGOUT, EXPORT, PROCESAR]
     
     @classmethod
     def es_valido(cls, valor):

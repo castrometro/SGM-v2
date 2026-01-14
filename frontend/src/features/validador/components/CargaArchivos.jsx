@@ -663,7 +663,9 @@ const CargaArchivos = ({ cierreId, clienteErp = null }) => {
           refetchERP()
         }}
         onProcesoIniciado={() => {
-          handleCloseClasificacion()
+          // El modal ahora se cierra automáticamente después de mostrar el progreso
+          // Solo refrescamos los datos cuando termine
+          refetchERP()
         }}
       />
     </div>

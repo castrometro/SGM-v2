@@ -134,12 +134,14 @@ class AuditLog(models.Model):
         datos_anteriores=None,
         datos_nuevos=None,
         cliente_id=None,
+        usuario=None,
+        ip_address=None,
     ):
         """
         Registra una acción en el log de auditoría.
         
         Args:
-            request: HttpRequest con usuario e info de cliente
+            request: HttpRequest con usuario e info de cliente (puede ser None para Celery)
             accion: Tipo de acción (usar AccionAudit constants)
             instancia: Objeto afectado (opcional, extrae modelo/id/repr)
             modelo: Nombre del modelo (si no hay instancia)
@@ -147,19 +149,34 @@ class AuditLog(models.Model):
             datos_anteriores: Dict con estado previo
             datos_nuevos: Dict con nuevo estado
             cliente_id: ID del cliente (si no se puede extraer de instancia)
+            usuario: Usuario directo (para llamadas desde Celery sin request)
+            ip_address: IP del cliente (para llamadas desde Celery sin request)
         
         Returns:
             AuditLog creado
         """
-        # Extraer info del request
-        usuario = getattr(request, 'user', None)
-        if usuario and not usuario.is_authenticated:
-            usuario = None
+        # Extraer info del request (puede ser None para Celery)
+        if usuario is None and request:
+            usuario = getattr(request, 'user', None)
+            if usuario and not usuario.is_authenticated:
+                usuario = None
         
-        ip_address = cls._get_client_ip(request)
-        user_agent = request.META.get('HTTP_USER_AGENT', '')[:500]
-        endpoint = request.path
-        metodo_http = request.method
+        # ip_address puede venir como parámetro (desde Celery) o extraerse del request
+        _ip_address = ip_address
+        user_agent = ''
+        endpoint = ''
+        metodo_http = ''
+        
+        if request:
+            if not _ip_address:
+                _ip_address = cls._get_client_ip(request)
+            user_agent = request.META.get('HTTP_USER_AGENT', '')[:500]
+            endpoint = request.path
+            metodo_http = request.method
+        else:
+            # Desde Celery, usar valores especiales
+            endpoint = 'celery_task'
+            metodo_http = 'ASYNC'
         
         # Extraer info de la instancia si existe
         objeto_repr = ''
@@ -175,7 +192,7 @@ class AuditLog(models.Model):
         return cls.objects.create(
             usuario=usuario,
             usuario_email=usuario.email if usuario else '',
-            ip_address=ip_address,
+            ip_address=_ip_address,
             user_agent=user_agent,
             accion=accion,
             modelo=modelo or '',

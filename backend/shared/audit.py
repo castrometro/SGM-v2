@@ -126,6 +126,66 @@ def audit_delete(request, instancia, campos=None):
     )
 
 
+def audit_action_celery(usuario_id, accion, instancia, datos_anteriores=None, 
+                        datos_nuevos=None, campos=None, extra=None, ip_address=None):
+    """
+    Registra una acción en auditoría desde una tarea Celery (sin request).
+    
+    Útil para tareas asíncronas donde no hay objeto request disponible.
+    
+    Args:
+        usuario_id: ID del usuario que inició la acción (puede ser None)
+        accion: Tipo de acción (AccionAudit.CREATE, UPDATE, PROCESAR, etc.)
+        instancia: Instancia del modelo afectado
+        datos_anteriores: Dict con datos antes de la acción
+        datos_nuevos: Dict con datos después de la acción (si None, se genera automáticamente)
+        campos: Lista de campos a incluir en datos_nuevos (None = todos)
+        extra: Dict con información adicional para el campo 'datos_nuevos'
+        ip_address: IP del cliente que inició la acción (capturada en la vista)
+    
+    Uso en tarea Celery:
+        from shared.audit import audit_action_celery
+        from apps.core.constants import AccionAudit
+        
+        # Al completar procesamiento exitoso:
+        audit_action_celery(
+            usuario_id=usuario_id,
+            accion=AccionAudit.PROCESAR,
+            instancia=archivo_erp,
+            datos_anteriores={'estado': 'listo'},
+            datos_nuevos={'estado': 'procesado', 'empleados': 150},
+            ip_address='192.168.1.100'
+        )
+    """
+    from apps.core.models import Usuario
+    
+    # Obtener usuario si existe
+    user = None
+    if usuario_id:
+        try:
+            user = Usuario.objects.get(id=usuario_id)
+        except Usuario.DoesNotExist:
+            pass
+    
+    # Generar datos_nuevos si no se proporcionaron
+    if datos_nuevos is None:
+        datos_nuevos = modelo_a_dict(instancia, campos)
+    
+    # Agregar info extra si se proporciona
+    if extra and datos_nuevos:
+        datos_nuevos.update(extra)
+    
+    AuditLog.registrar(
+        request=None,  # No hay request en Celery
+        usuario=user,
+        accion=accion,
+        instancia=instancia,
+        datos_anteriores=datos_anteriores,
+        datos_nuevos=datos_nuevos,
+        ip_address=ip_address,
+    )
+
+
 # ============================================================================
 # Mixin para ViewSets simples (sin perform_* personalizado)
 # ============================================================================
