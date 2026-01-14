@@ -38,40 +38,69 @@ El archivo de novedades solo puede cargarse **DESPUÉS** de que el Libro de Remu
 
 ### Estructura Esperada
 
-El archivo de novedades es un Excel (`.xlsx`, `.xls`) o CSV (`.csv`) con la siguiente estructura:
+El archivo de novedades es un **Excel** (`.xlsx`, `.xls`). También se acepta CSV como alternativa.
 
 | Columna | Tipo | Obligatorio | Descripción |
 |---------|------|-------------|-------------|
-| **RUT** | String | ✅ Sí | RUT del empleado (formatos: `12345678-9`, `12.345.678-9`) |
-| **Nombre** | String | No | Nombre completo del empleado (para referencia) |
+| **rut** | String | ✅ Sí | RUT del empleado (formatos: `12345678-9`, `12.345.678-9`) |
 | **[Item 1]** | Number | - | Monto del primer concepto/novedad |
 | **[Item 2]** | Number | - | Monto del segundo concepto/novedad |
 | **[Item N]** | Number | - | Monto del N-ésimo concepto/novedad |
 
-### Ejemplo de Archivo
+### Características del Formato
 
-```
-| RUT           | Nombre          | Bono Colación | Horas Extra | Gratificación |
-|---------------|-----------------|---------------|-------------|---------------|
-| 12.345.678-9  | Juan Pérez      | 50000         | 0           | 125000        |
-| 11.222.333-4  | María González  | 50000         | 75000       | 125000        |
-| 15.666.777-8  | Pedro Soto      | 0             | 0           | 125000        |
-```
+| Característica | Valor |
+|----------------|-------|
+| **Formato principal** | Excel (`.xlsx`, `.xls`) |
+| **Formato alternativo** | CSV (`;` como separador) |
+| **Primera fila** | Headers (nombres de items) |
+| **Columna RUT** | Primera columna, nombre `rut` |
+| **Montos vacíos** | Se interpretan como 0 |
+
+### Ejemplo de Estructura (Excel)
+
+| rut | Anticipo Manual | Dcto. Convenio FALP | Dcto. No Sindicalizado | Bono Colación | Horas Extra (M) |
+|-----|-----------------|---------------------|------------------------|---------------|-----------------|
+| 10000186-1 | | | | 50000 | |
+| 10045847-0 | | 8800 | 20000 | 50000 | 75000 |
+| 12408696-5 | 1253952 | 8800 | | | 12 |
+
+### Items Comunes (ejemplos reales)
+
+Los nombres de items varían según el cliente. Ejemplos típicos:
+
+**Haberes:**
+- `Anticipo Manual`, `Anticipo Bono Vacaciones`
+- `Bono Colación`, `Bono Zona`, `Bono Especial`
+- `Horas Extra (M)`, `Hora Producción Asegurada`
+- `Comisión Venta`, `Comisiones Usados`
+- `Incentivo Mensual`, `Incentivo Trimestral`
+- `Gratificación`, `Semana Corrida (M)`
+
+**Descuentos:**
+- `Dcto. Convenio FALP`, `Dcto. No Sindicalizado`
+- `Descuento Préstamo Empresa`, `Dcto. Varios`
+- `Descuento Crédito Personal CCAF`
+- `Descuento Seguro Salud`
+- `Descuento por Leasing o Ahorro CCAF`
+
+**Otros:**
+- `Subsidio Licencia medica sobre tope`
+- `Días Festivo y Domingo`
+- `Cantidad Produccion Horas Mec.`
 
 ### Detección de Columnas
 
 El sistema detecta automáticamente:
 
-1. **Columna RUT**: Busca columnas que contengan "rut" en el nombre (case-insensitive)
-2. **Columna Nombre**: Busca columnas que contengan "nombre" (opcional)
-3. **Columnas de Items**: Todas las demás columnas se consideran items de novedades
+1. **Columna RUT**: Primera columna o columna que contenga "rut" en el nombre (case-insensitive)
+2. **Columnas de Items**: Todas las demás columnas se consideran items de novedades
 
 ### Columnas Ignoradas (no son items)
 
-- `rut`
-- `nombre`  
-- `fecha`
-- `periodo`
+```python
+COLUMNAS_IGNORADAS = ['rut', 'nombre', 'fecha', 'periodo', 'observacion', 'observaciones']
+```
 
 ---
 
@@ -291,39 +320,48 @@ Inicia el procesamiento (solo si todos los items están mapeados).
 ### 1. Archivo Subido
 
 ```csv
-RUT,Nombre,Bono Colación,Horas Extra 50%,Gratificación
-12.345.678-9,Juan Pérez,50000,0,125000
-11.222.333-4,María González,50000,75000,125000
+rut;Anticipo Manual;Dcto. Convenio FALP;Descuento Préstamo Empresa;Bono Colación;Horas Extra (M)
+10000186-1;;;;50000;
+10045847-0;;8800;;50000;75000
+12408696-5;1253952;8800;;;12
 ```
 
 ### 2. Headers Extraídos (ItemNovedades)
 
 ```python
-ItemNovedades(nombre_original='Bono Colación', orden=2, mapeo=None)
-ItemNovedades(nombre_original='Horas Extra 50%', orden=3, mapeo=None)
-ItemNovedades(nombre_original='Gratificación', orden=4, mapeo=None)
+ItemNovedades(nombre_original='Anticipo Manual', orden=1, mapeo=None)
+ItemNovedades(nombre_original='Dcto. Convenio FALP', orden=2, mapeo=None)
+ItemNovedades(nombre_original='Descuento Préstamo Empresa', orden=3, mapeo=None)
+ItemNovedades(nombre_original='Bono Colación', orden=4, mapeo=None)
+ItemNovedades(nombre_original='Horas Extra (M)', orden=5, mapeo=None)
 ```
 
 ### 3. Mapeos Creados
 
 ```python
+# El usuario mapea cada nombre del cliente a un concepto del ERP
+MapeoItemNovedades(cliente=cliente, nombre_novedades='Anticipo Manual', concepto_erp=concepto_anticipo)
+MapeoItemNovedades(cliente=cliente, nombre_novedades='Dcto. Convenio FALP', concepto_erp=concepto_dcto_salud)
+MapeoItemNovedades(cliente=cliente, nombre_novedades='Descuento Préstamo Empresa', concepto_erp=concepto_prestamo)
 MapeoItemNovedades(cliente=cliente, nombre_novedades='Bono Colación', concepto_erp=concepto_colacion)
-MapeoItemNovedades(cliente=cliente, nombre_novedades='Horas Extra 50%', concepto_erp=concepto_hh_extra)
-MapeoItemNovedades(cliente=cliente, nombre_novedades='Gratificación', concepto_erp=concepto_gratif)
+MapeoItemNovedades(cliente=cliente, nombre_novedades='Horas Extra (M)', concepto_erp=concepto_hh_extra)
 ```
 
 ### 4. Registros Procesados (RegistroNovedades)
 
 ```python
-# Juan Pérez - 2 registros (monto > 0)
-RegistroNovedades(rut='12.345.678-9', item=bono_colacion, monto=50000)
-RegistroNovedades(rut='12.345.678-9', item=gratificacion, monto=125000)
-# Horas Extra = 0, no se crea registro
+# 10000186-1 - 1 registro (solo Bono Colación tiene monto > 0)
+RegistroNovedades(rut='10000186-1', item=bono_colacion, monto=50000)
 
-# María González - 3 registros
-RegistroNovedades(rut='11.222.333-4', item=bono_colacion, monto=50000)
-RegistroNovedades(rut='11.222.333-4', item=horas_extra, monto=75000)
-RegistroNovedades(rut='11.222.333-4', item=gratificacion, monto=125000)
+# 10045847-0 - 3 registros
+RegistroNovedades(rut='10045847-0', item=dcto_convenio, monto=8800)
+RegistroNovedades(rut='10045847-0', item=bono_colacion, monto=50000)
+RegistroNovedades(rut='10045847-0', item=horas_extra, monto=75000)
+
+# 12408696-5 - 3 registros
+RegistroNovedades(rut='12408696-5', item=anticipo_manual, monto=1253952)
+RegistroNovedades(rut='12408696-5', item=dcto_convenio, monto=8800)
+RegistroNovedades(rut='12408696-5', item=horas_extra, monto=12)
 ```
 
 ### 5. Estado Final
