@@ -160,7 +160,7 @@ const CierreDetailPage = () => {
             variant="danger"
           />
         )
-        )
+        
       
       default:
         return (
