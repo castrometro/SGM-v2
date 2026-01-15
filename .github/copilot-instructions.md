@@ -82,25 +82,81 @@ Cierre.objects.select_related('cliente', 'analista').filter(...)
 
 ## Flujo de Cierre
 
-El flujo del cierre tiene dos fases de carga de archivos:
+### Estados del Cierre
+
+| # | Estado | Descripción | Acción requerida |
+|---|--------|-------------|------------------|
+| 1 | `CARGA_ARCHIVOS` | Hub de trabajo principal | Subir archivos, clasificar, mapear |
+| 2 | `CON_DISCREPANCIAS` | Existen diferencias ERP vs Cliente | Resolver discrepancias |
+| 3 | `SIN_DISCREPANCIAS` | 0 discrepancias (inicial o resueltas) | Click manual para consolidar |
+| 4 | `CONSOLIDADO` | Datos validados y confirmados | Detectar incidencias |
+| 5 | `CON_INCIDENCIAS` | Hay incidencias detectadas | Resolver incidencias |
+| 6 | `SIN_INCIDENCIAS` | No hay incidencias | Finalizar |
+| 7 | `FINALIZADO` | Proceso completo | - |
+
+### Diagrama de Flujo
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  FASE 1: LIBRO ERP              FASE 2: NOVEDADES CLIENTE                   │
-│  ──────────────────             ─────────────────────────                   │
-│  carga_archivos (ERP) ──────→ clasificacion_conceptos ──────→              │
-│                                                                             │
-│  carga_novedades (cliente) ──→ mapeo_items ──→ comparacion ──→             │
-│                                                                             │
-│  con_discrepancias (loop) ──→ consolidado ──→ deteccion_incidencias ──→    │
-│                                                                             │
-│  revision_incidencias ──→ finalizado                                        │
-└─────────────────────────────────────────────────────────────────────────────┘
+                    ┌─────────────────────────────────────────────────────────┐
+                    │                    CARGA_ARCHIVOS                       │
+                    │  ┌─────────────┐ ┌─────────────┐ ┌─────────────────┐   │
+                    │  │ Libro ERP   │ │ Clasificar  │ │ Novedades       │   │
+                    │  │ [Subir]     │ │ [Conceptos] │ │ [Subir]         │   │
+                    │  └─────────────┘ └─────────────┘ └─────────────────┘   │
+                    │  ┌─────────────────────────────────────────────────┐   │
+                    │  │ Mapeo Novedades [Mapear headers → conceptos]    │   │
+                    │  └─────────────────────────────────────────────────┘   │
+                    │           [🚀 Generar Comparación] ← Todo listo        │
+                    └─────────────────────────┬───────────────────────────────┘
+                                              │
+                        ┌─────────────────────┴─────────────────────┐
+                        ▼                                           ▼
+               ┌─────────────────┐                        ┌─────────────────┐
+               │ CON_DISCREPANCIAS│◄──────────────────────│SIN_DISCREPANCIAS│
+               │ (resolver)       │                        │ (click manual)  │
+               └────────┬────────┘                        └────────┬────────┘
+                        │ ◄── Puede volver a CARGA_ARCHIVOS        │
+                        │     si necesita corregir archivos        │
+                        └──────────────────┬───────────────────────┘
+                                           ▼
+                                  ┌─────────────────┐
+                                  │   CONSOLIDADO   │
+                                  │ (datos válidos) │
+                                  └────────┬────────┘
+                                           │ [Detectar Incidencias] (manual)
+                        ┌──────────────────┴──────────────────┐
+                        ▼                                      ▼
+               ┌─────────────────┐                    ┌─────────────────┐
+               │ CON_INCIDENCIAS │                    │ SIN_INCIDENCIAS │
+               │ (resolver)      │                    │                 │
+               └────────┬────────┘                    └────────┬────────┘
+                        │                                      │
+                        └──────────────────┬───────────────────┘
+                                           ▼
+                                  ┌─────────────────┐
+                                  │   FINALIZADO    │
+                                  └─────────────────┘
 ```
 
-**IMPORTANTE**: Las novedades se cargan DESPUÉS del libro porque:
-- Necesitamos los conceptos clasificados para mapear items
-- La comparación requiere ambos procesados
+### Reglas Importantes
+
+1. **CARGA_ARCHIVOS es el "Hub"**: Una sola vista con todas las tarjetas. El usuario puede:
+   - Subir/eliminar libro ERP
+   - Clasificar conceptos del libro
+   - Subir/eliminar novedades del cliente
+   - Mapear headers de novedades → conceptos del libro
+
+2. **Botón "Generar Comparación"**: Solo se habilita cuando:
+   - ✅ Libro ERP procesado
+   - ✅ Todos los conceptos clasificados
+   - ✅ Novedades procesadas
+   - ✅ Todos los headers mapeados
+
+3. **SIN_DISCREPANCIAS requiere acción manual**: El analista debe hacer click explícito para pasar a CONSOLIDADO. Nunca automático.
+
+4. **Se puede retroceder**: Desde CON_DISCREPANCIAS se puede volver a CARGA_ARCHIVOS para corregir archivos.
+
+5. **Detección de incidencias es manual**: El paso de CONSOLIDADO a CON/SIN_INCIDENCIAS requiere acción del usuario.
 
 Estados definidos en `EstadoCierre.CHOICES`. Ver `apps/validador/constants.py` para grupos de estados.
 
@@ -173,6 +229,6 @@ Ver [docs/backend/AUDIT_SYSTEM.md](docs/backend/AUDIT_SYSTEM.md) para documentac
 - [frontend/src/hooks/usePermissions.js](frontend/src/hooks/usePermissions.js) - Hook de permisos
 - [frontend/src/contexts/AuthContext.jsx](frontend/src/contexts/AuthContext.jsx) - Auth provider
 - [docs/backend/SERVICE_LAYER.md](docs/backend/SERVICE_LAYER.md) - Guía detallada del Service Layer
+- [docs/backend/FLUJO_CIERRE.md](docs/backend/FLUJO_CIERRE.md) - Flujo de estados del cierre
 - [docs/backend/AUDIT_SYSTEM.md](docs/backend/AUDIT_SYSTEM.md) - Sistema de auditoría
 - [docs/backend/NOVEDADES.md](docs/backend/NOVEDADES.md) - Archivo de novedades del cliente
-- [docs/backend/AUDIT_SYSTEM.md](docs/backend/AUDIT_SYSTEM.md) - Sistema de auditoría

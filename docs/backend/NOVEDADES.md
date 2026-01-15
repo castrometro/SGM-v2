@@ -197,57 +197,79 @@ class ItemNovedades(models.Model):
     Un item/header detectado en el archivo de novedades.
     Permite mapear antes de procesar.
     """
-    
-    archivo = ForeignKey(ArchivoAnalista)      # Archivo origen
-    cliente = ForeignKey(Cliente)              # Cliente dueño
-    nombre_original = CharField(max_length=200) # Nombre como aparece en archivo
-    orden = PositiveIntegerField()             # Orden en el archivo (columna)
-    
-    # Mapeo (puede ser null si es nuevo)
-    mapeo = ForeignKey(MapeoItemNovedades, null=True)
-    
-    class Meta:
-        unique_together = ['archivo', 'nombre_original']
-```
+### ConceptoNovedades
 
-### MapeoItemNovedades
-
-Mapeo persistente entre items del cliente y conceptos del ERP.
+Modelo para headers extraídos del archivo de novedades, siguiendo el mismo patrón de `ConceptoLibro`.
 
 ```python
-class MapeoItemNovedades(models.Model):
+class ConceptoNovedades(models.Model):
     """
-    Mapeo 1:1 reutilizable por cliente.
-    Se crea una vez y se aplica automáticamente en futuros cierres.
+    Header de columna en archivo de Novedades del cliente.
+    
+    Similar a ConceptoLibro, pero se mapea a ConceptoLibro en vez de 
+    a CategoriaConcepto directamente.
+    
+    Los conceptos son por cliente+ERP y se reutilizan entre cierres.
     """
     
-    cliente = ForeignKey(Cliente)              # Cliente dueño del mapeo
-    nombre_novedades = CharField()             # Nombre como aparece en archivo
-    concepto_erp = ForeignKey(ConceptoCliente) # Concepto del ERP al que mapea
-    mapeado_por = ForeignKey(User)             # Usuario que creó el mapeo
-    fecha_mapeo = DateTimeField()              # Cuándo se creó
-    notas = TextField(blank=True)              # Notas opcionales
+    cliente = ForeignKey(Cliente)              # Cliente dueño del concepto
+    erp = ForeignKey(ERP)                      # ERP del cliente
+    
+    # Header del archivo
+    header_original = TextField()              # Nombre como aparece en archivo
+    header_normalizado = CharField(max_length=250)  # Nombre normalizado (lowercase, sin acentos)
+    
+    # Mapeo a ConceptoLibro (lo que permite la comparación)
+    concepto_libro = ForeignKey(ConceptoLibro, null=True, blank=True)
+    
+    # Metadata
+    orden = PositiveSmallIntegerField(default=0)  # Orden en archivo
+    activo = BooleanField(default=True)
+    mapeado_por = ForeignKey(User, null=True)     # Quién hizo el mapeo
+    fecha_mapeo = DateTimeField(null=True)
+    
+    class Meta:
+        unique_together = ['cliente', 'erp', 'header_normalizado']
+    
+    @property
+    def mapeado(self) -> bool:
+        """True si el concepto está mapeado a un ConceptoLibro."""
+        return self.concepto_libro_id is not None
+    
+    @property
+    def categoria(self):
+        """Categoría delegada desde el ConceptoLibro."""
+        if self.concepto_libro:
+            return self.concepto_libro.categoria
+        return None
 ```
 
-**Ubicación**: [backend/apps/validador/models/concepto.py](../../backend/apps/validador/models/concepto.py)
+**Ubicación**: [backend/apps/validador/models/concepto_novedades.py](../../backend/apps/validador/models/concepto_novedades.py)
 
 ### RegistroNovedades
 
-Datos finales procesados (similar a RegistroLibro).
+Datos finales procesados (similar a RegistroConcepto del libro).
 
 ```python
 class RegistroNovedades(models.Model):
     """
-    Un registro por cada combinación (empleado, item, monto).
-    Se crea DESPUÉS del mapeo, durante el procesamiento.
+    Un registro por cada combinación (empleado, concepto, monto).
+    Almacena los datos del archivo de novedades para comparación.
     """
     
-    cierre = ForeignKey(Cierre)                # Cierre al que pertenece
-    rut_empleado = CharField(max_length=12)    # RUT del empleado
-    nombre_empleado = CharField(blank=True)    # Nombre (referencia)
-    item = ForeignKey(ItemNovedades)           # Item del archivo
-    mapeo = ForeignKey(MapeoItemNovedades)     # Mapeo al concepto ERP
-    monto = DecimalField()                     # Monto informado por cliente
+    cierre = ForeignKey(Cierre)                         # Cierre al que pertenece
+    rut_empleado = CharField(max_length=12)             # RUT del empleado
+    nombre_empleado = CharField(blank=True)             # Nombre (referencia)
+    nombre_item = CharField(max_length=200)             # Nombre original del item
+    concepto_novedades = ForeignKey(ConceptoNovedades)  # Concepto mapeado
+    monto = DecimalField()                              # Monto informado por cliente
+    
+    @property
+    def categoria(self):
+        """Categoría delegada desde ConceptoNovedades -> ConceptoLibro."""
+        if self.concepto_novedades and self.concepto_novedades.concepto_libro:
+            return self.concepto_novedades.concepto_libro.categoria
+        return None
 ```
 
 **Ubicación**: [backend/apps/validador/models/empleado.py](../../backend/apps/validador/models/empleado.py)
@@ -263,34 +285,55 @@ POST /api/v1/validador/archivos-analista/{id}/extraer_headers/
 ```
 
 Inicia la extracción de headers del archivo de novedades.
+Crea `ConceptoNovedades` por cada header encontrado.
 
-### Obtener Items Sin Mapear
+### Obtener Conceptos Sin Mapear
 
 ```bash
-GET /api/v1/validador/archivos-analista/{id}/items_sin_mapear/
+GET /api/v1/validador/mapeos/sin_mapear/?cliente_id=1&erp_id=2
 
 # Response
 {
   "count": 3,
   "items": [
-    {"nombre_original": "Bono Colación", "orden": 2},
-    {"nombre_original": "HH.EE. 50%", "orden": 3},
-    {"nombre_original": "Gratificación", "orden": 4}
+    {"id": 1, "header_original": "Bono Colación", "orden": 2},
+    {"id": 2, "header_original": "HH.EE. 50%", "orden": 3},
+    {"id": 3, "header_original": "Gratificación", "orden": 4}
   ]
 }
 ```
 
-### Mapear Items
+### Obtener Conceptos del Libro Disponibles
 
 ```bash
-POST /api/v1/validador/mapeos/crear_batch/
+GET /api/v1/validador/mapeos/conceptos_libro/?cliente_id=1&erp_id=2
+
+# Response
 {
-  "cliente_id": 1,
-  "archivo_id": 123,
-  "mapeos": [
-    {"nombre_novedades": "Bono Colación", "concepto_erp_id": 45},
-    {"nombre_novedades": "HH.EE. 50%", "concepto_erp_id": 67}
+  "count": 45,
+  "conceptos": [
+    {"id": 10, "header_original": "Bono Colación", "categoria": "haberes_imponibles", "categoria_display": "Haberes Imponibles"},
+    {"id": 11, "header_original": "Horas Extra 50%", "categoria": "haberes_imponibles", "categoria_display": "Haberes Imponibles"}
   ]
+}
+```
+
+### Mapear Conceptos (Batch)
+
+```bash
+POST /api/v1/validador/mapeos/mapear_batch/
+{
+  "mapeos": [
+    {"concepto_novedades_id": 1, "concepto_libro_id": 10},
+    {"concepto_novedades_id": 2, "concepto_libro_id": 11}
+  ]
+}
+
+# Response
+{
+  "mapeados": 2,
+  "errores": [],
+  "sin_mapear": 1
 }
 ```
 

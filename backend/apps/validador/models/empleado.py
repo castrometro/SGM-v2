@@ -104,7 +104,10 @@ class RegistroConcepto(models.Model):
 class RegistroNovedades(models.Model):
     """
     Registro de novedades del cliente para un empleado.
-    Se usa para comparar contra RegistroConcepto.
+    Se usa para comparar contra RegistroConcepto (libro ERP).
+    
+    Cada registro representa un monto informado por el cliente 
+    para un concepto de novedades específico.
     """
     
     cierre = models.ForeignKey(
@@ -120,13 +123,14 @@ class RegistroNovedades(models.Model):
     # Item de novedades (nombre original del cliente)
     nombre_item = models.CharField(max_length=200)
     
-    # Mapeo al concepto del ERP (puede ser null si no está mapeado)
-    mapeo = models.ForeignKey(
-        'MapeoItemNovedades',
+    # Concepto de novedades mapeado (nuevo: reemplaza mapeo FK)
+    concepto_novedades = models.ForeignKey(
+        'ConceptoNovedades',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='registros'
+        related_name='registros',
+        help_text='Concepto de novedades (conecta con ConceptoLibro)'
     )
     
     # Monto informado por el cliente
@@ -146,3 +150,10 @@ class RegistroNovedades(models.Model):
     
     def __str__(self):
         return f"{self.rut_empleado} - {self.nombre_item}: ${self.monto}"
+    
+    @property
+    def categoria(self):
+        """Categoría delegada desde ConceptoNovedades -> ConceptoLibro."""
+        if self.concepto_novedades and self.concepto_novedades.concepto_libro:
+            return self.concepto_novedades.concepto_libro.categoria
+        return None

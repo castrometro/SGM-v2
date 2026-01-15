@@ -3,7 +3,7 @@ Serializers para Conceptos y Mapeos.
 """
 
 from rest_framework import serializers
-from ..models import CategoriaConcepto, ConceptoCliente, MapeoItemNovedades
+from ..models import CategoriaConcepto, ConceptoCliente, ConceptoNovedades, ConceptoLibro
 
 
 class CategoriaConceptoSerializer(serializers.ModelSerializer):
@@ -86,55 +86,53 @@ class ConceptoSinClasificarSerializer(serializers.ModelSerializer):
         fields = ['id', 'nombre_erp']
 
 
-class MapeoItemNovedadesSerializer(serializers.ModelSerializer):
-    """Serializer para mapeos de items."""
+class ConceptoNovedadesSerializer(serializers.ModelSerializer):
+    """
+    Serializer para ConceptoNovedades.
     
-    concepto_erp_nombre = serializers.CharField(
-        source='concepto_erp.nombre_erp',
-        read_only=True
-    )
+    Representa headers extraídos del archivo de novedades,
+    mapeados a ConceptoLibro (headers del libro ERP).
+    """
+    
+    concepto_libro_info = serializers.SerializerMethodField()
     mapeado_por_nombre = serializers.CharField(
         source='mapeado_por.get_full_name',
         read_only=True,
         allow_null=True
     )
-    
-    class Meta:
-        model = MapeoItemNovedades
-        fields = [
-            'id', 'cliente', 'nombre_novedades',
-            'concepto_erp', 'concepto_erp_nombre',
-            'mapeado_por', 'mapeado_por_nombre',
-            'fecha_mapeo', 'notas'
-        ]
-        read_only_fields = ['mapeado_por', 'fecha_mapeo']
-
-
-class MapeoItemCrearSerializer(serializers.Serializer):
-    """Serializer para crear múltiples mapeos."""
-    
-    mapeos = serializers.ListField(
-        child=serializers.DictField()
+    categoria = serializers.CharField(
+        read_only=True,
+        allow_null=True
     )
     
-    def validate_mapeos(self, value):
-        """
-        Espera formato:
-        [
-            {"nombre_novedades": "Bono Colación", "concepto_erp_id": 5},
-            {"nombre_novedades": "Gratificación", "concepto_erp_id": 12},
+    class Meta:
+        model = ConceptoNovedades
+        fields = [
+            'id', 'cliente', 'erp',
+            'header_original', 'header_normalizado',
+            'concepto_libro', 'concepto_libro_info',
+            'categoria',  # delegado desde concepto_libro
+            'orden', 'activo',
+            'mapeado_por', 'mapeado_por_nombre',
+            'fecha_mapeo'
         ]
-        """
-        for item in value:
-            if 'nombre_novedades' not in item or 'concepto_erp_id' not in item:
-                raise serializers.ValidationError(
-                    "Cada mapeo debe tener 'nombre_novedades' y 'concepto_erp_id'"
-                )
-        return value
-
-
-class ItemSinMapearSerializer(serializers.Serializer):
-    """Serializer para listar items sin mapear."""
+        read_only_fields = ['mapeado_por', 'fecha_mapeo', 'categoria']
     
-    nombre_novedades = serializers.CharField()
-    cantidad_registros = serializers.IntegerField()
+    def get_concepto_libro_info(self, obj):
+        """Info del ConceptoLibro asociado."""
+        if not obj.concepto_libro:
+            return None
+        return {
+            'id': obj.concepto_libro.id,
+            'header_original': obj.concepto_libro.header_original,
+            'categoria': obj.concepto_libro.categoria,
+            'categoria_display': obj.concepto_libro.get_categoria_display(),
+        }
+
+
+class ConceptoNovedadesSinMapearSerializer(serializers.ModelSerializer):
+    """Serializer para listar conceptos de novedades sin mapear."""
+    
+    class Meta:
+        model = ConceptoNovedades
+        fields = ['id', 'header_original', 'orden']

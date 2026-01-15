@@ -1,8 +1,18 @@
 /**
- * Componente de Carga de Archivos para el Validador de Nómina
- * Soporta drag & drop, muestra progreso y lista de archivos subidos
+ * Componente Hub de Carga de Archivos para el Validador de Nómina
+ * 
+ * Este es el componente principal del estado CARGA_ARCHIVOS.
+ * Integra todas las tareas de preparación en una sola vista:
+ * 
+ * 1. Libro ERP: Subir y procesar archivo del sistema de nómina
+ * 2. Clasificación: Clasificar conceptos del libro
+ * 3. Novedades: Subir archivo de novedades del cliente
+ * 4. Mapeo: Mapear headers de novedades → conceptos del libro
+ * 
+ * El botón "Generar Comparación" solo se habilita cuando todo está listo.
  */
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
+import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query'
 import { 
   Upload, 
   File, 
@@ -17,12 +27,17 @@ import {
   Database,
   Users,
   Settings,
-  Tag
+  Tag,
+  Link2,
+  Rocket,
+  ChevronRight,
+  CheckCircle2
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui'
 import Badge from '../../../components/ui/Badge'
 import Button from '../../../components/ui/Button'
 import { cn } from '../../../utils/cn'
+import api from '../../../api/axios'
 import {
   useArchivosERP,
   useArchivosAnalista,
@@ -35,12 +50,16 @@ import {
   TIPOS_ANALISTA,
 } from '../hooks/useArchivos'
 import ClasificacionLibroModal from './ClasificacionLibroModal'
+import MapeoNovedadesModal from './MapeoNovedadesModal'
 import { 
   TIPO_ARCHIVO_ERP, 
   ESTADO_ARCHIVO,
   ESTADO_ARCHIVO_LIBRO,
+  ESTADO_ARCHIVO_NOVEDADES,
   libroRequiereAccion,
-  puedeClasificarLibro
+  puedeClasificarLibro,
+  puedeMapearNovedades,
+  POLLING_INTERVALS
 } from '../../../constants'
 
 // Constantes para estados de archivo
@@ -53,6 +72,8 @@ const ESTADO_STYLES = {
   extrayendo_headers: { color: 'warning', icon: Loader2, label: 'Extrayendo Headers', animate: true },
   pendiente_clasificacion: { color: 'warning', icon: Tag, label: 'Requiere Clasificación' },
   listo: { color: 'info', icon: FileCheck, label: 'Listo para Procesar' },
+  // Estados específicos de novedades
+  pendiente_mapeo: { color: 'warning', icon: Link2, label: 'Requiere Mapeo' },
 }
 
 // Formatos de archivo permitidos
@@ -204,14 +225,23 @@ const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUpl
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
           <h4 className="text-sm font-medium text-secondary-200">{label}</h4>
           <p className="text-xs text-secondary-500">{descripcion}</p>
         </div>
-        {archivo && (
-          <Badge variant={estadoInfo?.color} className="text-xs">
-            {estadoInfo?.label}
+        {archivo && estadoInfo && (
+          <Badge 
+            variant={estadoInfo.color} 
+            className={cn(
+              "flex-shrink-0 gap-1.5 whitespace-nowrap px-2.5 py-1",
+              estadoInfo.animate && "animate-pulse"
+            )}
+          >
+            {IconEstado && (
+              <IconEstado className={cn("h-3 w-3", estadoInfo.animate && "animate-spin")} />
+            )}
+            <span>{estadoInfo.label}</span>
           </Badge>
         )}
       </div>
@@ -419,22 +449,71 @@ const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUpl
 }
 
 /**
- * Componente principal de Carga de Archivos
+ * Componente principal de Carga de Archivos (HUB)
+ * 
+ * Props:
+ * - cierreId: ID del cierre
+ * - cierre: Objeto cierre completo (con cliente_id, cliente_erp, etc.)
+ * - onUpdate: Callback para refrescar datos del cierre
  */
-const CargaArchivos = ({ cierreId, clienteErp = null }) => {
+const CargaArchivos = ({ cierreId, cierre, onUpdate }) => {
+  const queryClient = useQueryClient()
+  
   // Estados locales para progreso de subida
   const [uploadingERP, setUploadingERP] = useState({})
   const [uploadingAnalista, setUploadingAnalista] = useState({})
   const [progressERP, setProgressERP] = useState({})
   const [progressAnalista, setProgressAnalista] = useState({})
   
-  // Estado para modal de clasificación
+  // Estado para modales
   const [clasificacionModalOpen, setClasificacionModalOpen] = useState(false)
   const [archivoParaClasificar, setArchivoParaClasificar] = useState(null)
+  const [mapeoModalOpen, setMapeoModalOpen] = useState(false)
 
   // Queries para obtener archivos existentes
   const { data: archivosERP, isLoading: loadingERP, refetch: refetchERP } = useArchivosERP(cierreId)
   const { data: archivosAnalista, isLoading: loadingAnalista, refetch: refetchAnalista } = useArchivosAnalista(cierreId)
+
+  // Query para obtener estado de clasificación de conceptos
+  const { data: estadoClasificacion, refetch: refetchClasificacion } = useQuery({
+    queryKey: ['conceptos-clasificacion', cierre?.cliente],
+    queryFn: async () => {
+      if (!cierre?.cliente) return null
+      const { data } = await api.get(`/v1/validador/conceptos-libro/`, {
+        params: { cliente_id: cierre.cliente }
+      })
+      const sinClasificar = data.filter(c => !c.categoria).length
+      const total = data.length
+      return { total, clasificados: total - sinClasificar, sinClasificar }
+    },
+    enabled: !!cierre?.cliente,
+  })
+
+  // Query para obtener estado de mapeo de novedades
+  const { data: estadoMapeo, refetch: refetchMapeo } = useQuery({
+    queryKey: ['conceptos-novedades-mapeo', cierre?.cliente, cierre?.cliente_erp?.id],
+    queryFn: async () => {
+      if (!cierre?.cliente) return null
+      const { data } = await api.get(`/v1/validador/mapeos/sin_mapear/`, {
+        params: { 
+          cliente_id: cierre.cliente,
+          erp_id: cierre.cliente_erp?.id 
+        }
+      })
+      // Sin mapear
+      const sinMapear = data.count || data.items?.length || 0
+      // Obtener total de conceptos novedades
+      const { data: total } = await api.get(`/v1/validador/conceptos-novedades/`, {
+        params: { 
+          cliente_id: cierre.cliente,
+          erp_id: cierre.cliente_erp?.id
+        }
+      })
+      const totalConceptos = total.length || 0
+      return { total: totalConceptos, mapeados: totalConceptos - sinMapear, sinMapear }
+    },
+    enabled: !!cierre?.cliente && !!archivosAnalista?.novedades,
+  })
 
   // Mutations
   const uploadERP = useUploadArchivoERP()
@@ -442,19 +521,61 @@ const CargaArchivos = ({ cierreId, clienteErp = null }) => {
   const deleteERP = useDeleteArchivoERP()
   const deleteAnalista = useDeleteArchivoAnalista()
 
-  // Handler para abrir modal de clasificación
+  // Mutation para generar comparación
+  const generarComparacion = useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post(`/v1/validador/cierres/${cierreId}/generar-comparacion/`)
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['cierre', cierreId])
+      onUpdate?.()
+    },
+  })
+
+  // Archivos específicos
+  const libroERP = archivosERP?.libro_remuneraciones
+  const archivoNovedades = archivosAnalista?.novedades
+
+  // Calcular si se puede generar comparación
+  const puedeGenerarComparacion = useMemo(() => {
+    // 1. Libro ERP debe estar procesado
+    const libroOk = libroERP?.estado === ESTADO_ARCHIVO_LIBRO.PROCESADO
+    
+    // 2. Todos los conceptos deben estar clasificados
+    const clasificacionOk = estadoClasificacion?.sinClasificar === 0 && estadoClasificacion?.total > 0
+    
+    // 3. Novedades debe estar procesado
+    const novedadesOk = archivoNovedades?.estado === ESTADO_ARCHIVO_NOVEDADES.PROCESADO
+    
+    // 4. Todos los headers deben estar mapeados
+    const mapeoOk = estadoMapeo?.sinMapear === 0 && estadoMapeo?.total > 0
+    
+    return libroOk && clasificacionOk && novedadesOk && mapeoOk
+  }, [libroERP, estadoClasificacion, archivoNovedades, estadoMapeo])
+
+  // Handlers para modales
   const handleOpenClasificacion = useCallback((archivo) => {
     setArchivoParaClasificar(archivo)
     setClasificacionModalOpen(true)
   }, [])
 
-  // Handler para cerrar modal de clasificación
   const handleCloseClasificacion = useCallback(() => {
     setClasificacionModalOpen(false)
     setArchivoParaClasificar(null)
-    // Refrescar archivos después de cerrar
     refetchERP()
-  }, [refetchERP])
+    refetchClasificacion()
+  }, [refetchERP, refetchClasificacion])
+
+  const handleOpenMapeo = useCallback(() => {
+    setMapeoModalOpen(true)
+  }, [])
+
+  const handleCloseMapeo = useCallback(() => {
+    setMapeoModalOpen(false)
+    refetchMapeo()
+    refetchAnalista()
+  }, [refetchMapeo, refetchAnalista])
 
   // Handlers para archivos ERP
   const handleUploadERP = useCallback((tipo, archivo) => {
@@ -510,11 +631,12 @@ const CargaArchivos = ({ cierreId, clienteErp = null }) => {
     }
   }, [cierreId, deleteAnalista])
 
-  // Calcular progreso total
-  const totalERP = TIPOS_ERP.length
-  const uploadedERP = TIPOS_ERP.filter(t => archivosERP?.[t.value]).length
-  const totalAnalista = TIPOS_ANALISTA.length
-  const uploadedAnalista = TIPOS_ANALISTA.filter(t => archivosAnalista?.[t.value]).length
+  // Handler para generar comparación
+  const handleGenerarComparacion = useCallback(() => {
+    if (puedeGenerarComparacion) {
+      generarComparacion.mutate()
+    }
+  }, [puedeGenerarComparacion, generarComparacion])
 
   const isLoading = loadingERP || loadingAnalista
 
@@ -525,6 +647,18 @@ const CargaArchivos = ({ cierreId, clienteErp = null }) => {
       </div>
     )
   }
+
+  // Estado de cada tarjeta para el checklist
+  const libroOk = libroERP?.estado === ESTADO_ARCHIVO_LIBRO.PROCESADO
+  const clasificacionOk = estadoClasificacion?.sinClasificar === 0 && estadoClasificacion?.total > 0
+  const novedadesOk = archivoNovedades?.estado === ESTADO_ARCHIVO_NOVEDADES.PROCESADO
+  const mapeoOk = estadoMapeo?.sinMapear === 0 && estadoMapeo?.total > 0
+
+  // Calcular progreso total
+  const totalERP = TIPOS_ERP.length
+  const uploadedERP = TIPOS_ERP.filter(t => archivosERP?.[t.value]).length
+  const totalAnalista = TIPOS_ANALISTA.length
+  const uploadedAnalista = TIPOS_ANALISTA.filter(t => archivosAnalista?.[t.value]).length
 
   return (
     <div className="space-y-6">
@@ -567,10 +701,10 @@ const CargaArchivos = ({ cierreId, clienteErp = null }) => {
                 <FileSpreadsheet className="h-5 w-5 text-primary-400" />
                 <CardTitle>Archivos del ERP</CardTitle>
               </div>
-              {clienteErp ? (
+              {cierre?.cliente_erp ? (
                 <Badge variant="info" className="flex items-center gap-1.5">
                   <Database className="h-3.5 w-3.5" />
-                  {clienteErp.nombre}
+                  {cierre.cliente_erp.nombre}
                 </Badge>
               ) : (
                 <Badge variant="secondary" className="flex items-center gap-1.5">
@@ -580,8 +714,8 @@ const CargaArchivos = ({ cierreId, clienteErp = null }) => {
               )}
             </div>
             <p className="text-sm text-secondary-400 mt-1">
-              {clienteErp 
-                ? `Archivos generados desde ${clienteErp.nombre}`
+              {cierre?.cliente_erp 
+                ? `Archivos generados desde ${cierre.cliente_erp.nombre}`
                 : 'Archivos generados desde el sistema de nómina'
               }
             </p>
@@ -629,11 +763,54 @@ const CargaArchivos = ({ cierreId, clienteErp = null }) => {
                 isUploading={uploadingAnalista[tipo.value]}
                 progress={progressAnalista[tipo.value] || 0}
                 categoria="analista"
+                onClasificar={tipo.value === 'novedades' ? handleOpenMapeo : undefined}
               />
             ))}
           </CardContent>
         </Card>
       </div>
+
+      {/* Checklist y Botón de Comparación */}
+      <Card className="border-2 border-primary-500/30">
+        <CardContent className="py-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            {/* Checklist */}
+            <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+              <ChecklistItem label="Libro ERP" checked={libroOk} />
+              <ChecklistItem label="Clasificación" checked={clasificacionOk} />
+              <ChecklistItem label="Novedades" checked={novedadesOk} />
+              <ChecklistItem label="Mapeo" checked={mapeoOk} />
+            </div>
+            
+            {/* Botón */}
+            <Button
+              size="lg"
+              variant={puedeGenerarComparacion ? "primary" : "secondary"}
+              disabled={!puedeGenerarComparacion || generarComparacion.isPending}
+              onClick={handleGenerarComparacion}
+              className="min-w-[200px]"
+            >
+              {generarComparacion.isPending ? (
+                <>
+                  <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                  Generando...
+                </>
+              ) : (
+                <>
+                  <Rocket className="h-5 w-5 mr-2" />
+                  Generar Comparación
+                </>
+              )}
+            </Button>
+          </div>
+          
+          {!puedeGenerarComparacion && (
+            <p className="text-sm text-secondary-400 mt-4 text-center">
+              Completa todos los pasos para habilitar la comparación
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Instrucciones */}
       <Card className="bg-secondary-800/30">
@@ -644,9 +821,9 @@ const CargaArchivos = ({ cierreId, clienteErp = null }) => {
               <p className="font-medium text-secondary-200 mb-1">Instrucciones:</p>
               <ul className="list-disc list-inside space-y-1 text-secondary-400">
                 <li>Los archivos deben estar en formato Excel (.xlsx, .xls) o CSV (.csv)</li>
-                <li>El <strong>Libro de Remuneraciones</strong> y <strong>Movimientos del Mes</strong> son obligatorios</li>
-                <li>Los archivos del cliente son opcionales según las novedades del período</li>
-                <li>Puedes reemplazar un archivo subiendo una nueva versión</li>
+                <li>El <strong>Libro de Remuneraciones</strong> y <strong>Novedades</strong> son obligatorios para la comparación</li>
+                <li>Clasifica los conceptos del Libro antes de poder procesar</li>
+                <li>Mapea los headers de Novedades a los conceptos del Libro</li>
               </ul>
             </div>
           </div>
@@ -661,15 +838,43 @@ const CargaArchivos = ({ cierreId, clienteErp = null }) => {
         cierreId={cierreId}
         onClasificacionComplete={() => {
           refetchERP()
+          refetchClasificacion()
         }}
         onProcesoIniciado={() => {
-          // El modal ahora se cierra automáticamente después de mostrar el progreso
-          // Solo refrescamos los datos cuando termine
           refetchERP()
         }}
+      />
+
+      {/* Modal de Mapeo de Novedades */}
+      <MapeoNovedadesModal
+        isOpen={mapeoModalOpen}
+        onClose={handleCloseMapeo}
+        cierreId={cierreId}
+        cliente={cierre?.cliente}
+        erpId={cierre?.cliente_erp?.id}
       />
     </div>
   )
 }
+
+/**
+ * Item del checklist
+ */
+const ChecklistItem = ({ label, checked }) => (
+  <div className="flex items-center gap-2">
+    <div className={cn(
+      "w-5 h-5 rounded-full flex items-center justify-center",
+      checked ? "bg-green-500" : "bg-secondary-700"
+    )}>
+      {checked && <Check className="h-3 w-3 text-white" />}
+    </div>
+    <span className={cn(
+      "text-sm",
+      checked ? "text-green-400" : "text-secondary-400"
+    )}>
+      {label}
+    </span>
+  </div>
+)
 
 export default CargaArchivos

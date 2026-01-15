@@ -2,21 +2,21 @@
 ViewSets para Archivos.
 """
 
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 
-from ..models import ArchivoERP, ArchivoAnalista, Cierre
+from ..models import ArchivoERP, ArchivoAnalista, Cierre, ConceptoNovedades, ConceptoLibro
 from ..serializers import (
     ArchivoERPSerializer,
     ArchivoERPUploadSerializer,
     ArchivoAnalistaSerializer,
     ArchivoAnalistaUploadSerializer,
 )
-from ..constants import TipoArchivoERP
-from ..tasks import extraer_headers_libro, procesar_archivo_erp, procesar_archivo_analista
+from ..constants import TipoArchivoERP, EstadoArchivoLibro, EstadoArchivoNovedades
+from ..tasks import extraer_headers_libro, procesar_archivo_erp, procesar_archivo_analista, extraer_headers_novedades
 from shared.audit import audit_create, audit_delete
 
 
@@ -113,17 +113,164 @@ class ArchivoAnalistaViewSet(viewsets.ModelViewSet):
         return ArchivoAnalistaSerializer
     
     def perform_create(self, serializer):
-        archivo = serializer.save()
-        audit_create(self.request, archivo)  # Registrar en auditoría
+        """
+        Crea archivo del analista con validaciones específicas por tipo.
         
-        # Disparar procesamiento asíncrono con usuario para auditoría
-        from ..tasks import procesar_archivo_analista
-        procesar_archivo_analista.delay(archivo.id, usuario_id=self.request.user.id)
+        Para NOVEDADES:
+            - Valida que el libro esté procesado
+            - Dispara extracción de headers (no procesamiento directo)
+        
+        Para otros tipos:
+            - Dispara procesamiento directo
+        """
+        # Obtener datos antes de guardar para validar
+        cierre = serializer.validated_data.get('cierre')
+        tipo = serializer.validated_data.get('tipo')
+        
+        # Validación: si es novedades, el libro debe estar procesado
+        if tipo == 'novedades':
+            libro = ArchivoERP.objects.filter(
+                cierre=cierre,
+                tipo=TipoArchivoERP.LIBRO_REMUNERACIONES,
+                es_version_actual=True
+            ).first()
+            
+            if not libro:
+                raise serializers.ValidationError({
+                    'tipo': 'No se puede subir novedades: primero debe subir el Libro de Remuneraciones'
+                })
+            
+            if libro.estado != EstadoArchivoLibro.PROCESADO:
+                raise serializers.ValidationError({
+                    'tipo': f'No se puede subir novedades: el Libro debe estar procesado (estado actual: {libro.estado})'
+                })
+        
+        archivo = serializer.save()
+        audit_create(self.request, archivo)
+        
+        # Disparar tarea según tipo
+        if tipo == 'novedades':
+            # Novedades: extraer headers primero (como el libro)
+            extraer_headers_novedades.delay(archivo.id, usuario_id=self.request.user.id)
+        else:
+            # Otros archivos: procesar directamente
+            procesar_archivo_analista.delay(archivo.id, usuario_id=self.request.user.id)
     
     def perform_destroy(self, instance):
         """Registrar eliminación en auditoría."""
         audit_delete(self.request, instance)
         instance.delete()
+    
+    @action(detail=True, methods=['get'])
+    def headers(self, request, pk=None):
+        """
+        Obtiene los headers/conceptos extraídos del archivo de novedades.
+        
+        Retorna:
+            - conceptos: Lista de ConceptoNovedades con estado de mapeo
+            - conceptos_libro: ConceptosLibro del cliente disponibles para mapear
+            - resumen: Conteos de conceptos mapeados/pendientes
+        """
+        archivo = self.get_object()
+        
+        if archivo.tipo != 'novedades':
+            return Response(
+                {'error': 'Este endpoint solo aplica para archivos de novedades'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Obtener cliente y ERP
+        cliente = archivo.cierre.cliente
+        config_erp = cliente.configuraciones_erp.filter(activo=True).select_related('erp').first()
+        if not config_erp:
+            return Response(
+                {'error': 'Cliente no tiene ERP activo configurado'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        erp = config_erp.erp
+        
+        # Obtener ConceptoNovedades del cliente+ERP
+        conceptos = ConceptoNovedades.objects.filter(
+            cliente=cliente,
+            erp=erp,
+            activo=True
+        ).select_related('concepto_libro').order_by('orden')
+        
+        conceptos_data = []
+        for concepto in conceptos:
+            conceptos_data.append({
+                'id': concepto.id,
+                'header_original': concepto.header_original,
+                'orden': concepto.orden,
+                'mapeado': concepto.mapeado,
+                'concepto_libro': {
+                    'id': concepto.concepto_libro.id,
+                    'header_original': concepto.concepto_libro.header_original,
+                    'categoria': concepto.concepto_libro.categoria,
+                    'categoria_display': concepto.concepto_libro.get_categoria_display(),
+                } if concepto.concepto_libro else None
+            })
+        
+        # Obtener conceptos del libro disponibles para mapear
+        conceptos_libro = ConceptoLibro.objects.filter(
+            cliente=cliente,
+            erp=erp,
+            activo=True,
+            categoria__isnull=False  # Solo clasificados
+        ).exclude(
+            categoria='ignorar'
+        ).order_by('categoria', 'orden', 'header_original')
+        
+        conceptos_libro_data = [
+            {
+                'id': c.id,
+                'header_original': c.header_original,
+                'categoria': c.categoria,
+                'categoria_display': c.get_categoria_display(),
+            }
+            for c in conceptos_libro
+        ]
+        
+        # Resumen
+        total = conceptos.count()
+        mapeados = conceptos.filter(concepto_libro__isnull=False).count()
+        
+        return Response({
+            'archivo_id': archivo.id,
+            'estado': archivo.estado,
+            'conceptos': conceptos_data,
+            'conceptos_libro': conceptos_libro_data,
+            'resumen': {
+                'total': total,
+                'mapeados': mapeados,
+                'pendientes': total - mapeados,
+                'progreso': round(mapeados / total * 100, 1) if total > 0 else 0,
+            }
+        })
+    
+    @action(detail=True, methods=['post'])
+    def extraer_headers(self, request, pk=None):
+        """Re-extrae los headers del archivo de novedades."""
+        archivo = self.get_object()
+        
+        if archivo.tipo != 'novedades':
+            return Response(
+                {'error': 'Este endpoint solo aplica para archivos de novedades'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if archivo.estado not in [EstadoArchivoNovedades.SUBIDO, EstadoArchivoNovedades.ERROR]:
+            return Response(
+                {'error': f'No se puede re-extraer en estado {archivo.estado}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        extraer_headers_novedades.delay(archivo.id, usuario_id=request.user.id)
+        
+        return Response({
+            'mensaje': 'Extracción de headers iniciada',
+            'archivo_id': archivo.id,
+        })
     
     @action(detail=False, methods=['get'])
     def por_cierre(self, request):

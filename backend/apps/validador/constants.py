@@ -11,16 +11,22 @@ Incluye:
 
 class EstadoCierre:
     """
-    Estados del proceso de cierre de nómina.
+    Estados del proceso de cierre de nómina (7 estados principales).
     
     Flujo principal:
-        CARGA_ARCHIVOS (Libro ERP) → CLASIFICACION_CONCEPTOS → 
-        CARGA_NOVEDADES (archivo cliente) → MAPEO_ITEMS → COMPARACION →
-        CON_DISCREPANCIAS (loop) → CONSOLIDADO →
-        DETECCION_INCIDENCIAS → REVISION_INCIDENCIAS → FINALIZADO
+        CARGA_ARCHIVOS (hub único: ERP + clasificación + novedades + mapeo)
+        → [Generar Comparación]
+        → CON_DISCREPANCIAS / SIN_DISCREPANCIAS
+        → [Click manual] → CONSOLIDADO
+        → [Detectar Incidencias manual]
+        → CON_INCIDENCIAS / SIN_INCIDENCIAS
+        → FINALIZADO
     
-    IMPORTANTE: El archivo de novedades se carga DESPUÉS de procesar el libro.
-    Esto porque necesitamos los conceptos clasificados para el mapeo.
+    IMPORTANTE:
+    - CARGA_ARCHIVOS es el hub donde se hace todo el trabajo de preparación
+    - SIN_DISCREPANCIAS requiere click manual para pasar a CONSOLIDADO
+    - Se puede volver a CARGA_ARCHIVOS desde CON/SIN_DISCREPANCIAS
+    - Detección de incidencias es manual
     
     Uso:
         from apps.validador.constants import EstadoCierre
@@ -31,69 +37,68 @@ class EstadoCierre:
         if cierre.estado in EstadoCierre.ESTADOS_ACTIVOS:
             ...
     """
-    # Estados del flujo
-    CARGA_ARCHIVOS = 'carga_archivos'  # Solo archivos ERP (Libro)
-    CLASIFICACION_CONCEPTOS = 'clasificacion_conceptos'
-    CARGA_NOVEDADES = 'carga_novedades'  # Archivos del cliente (después del libro)
-    MAPEO_ITEMS = 'mapeo_items'
-    COMPARACION = 'comparacion'
-    CON_DISCREPANCIAS = 'con_discrepancias'
-    CONSOLIDADO = 'consolidado'
-    DETECCION_INCIDENCIAS = 'deteccion_incidencias'
-    REVISION_INCIDENCIAS = 'revision_incidencias'
-    FINALIZADO = 'finalizado'
+    # Estados del flujo (7 principales)
+    CARGA_ARCHIVOS = 'carga_archivos'       # Hub único: ERP + clasificación + novedades + mapeo
+    CON_DISCREPANCIAS = 'con_discrepancias' # Hay diferencias por resolver
+    SIN_DISCREPANCIAS = 'sin_discrepancias' # 0 discrepancias, requiere click manual
+    CONSOLIDADO = 'consolidado'             # Datos validados y confirmados
+    CON_INCIDENCIAS = 'con_incidencias'     # Hay incidencias por resolver
+    SIN_INCIDENCIAS = 'sin_incidencias'     # No hay incidencias
+    FINALIZADO = 'finalizado'               # Proceso completo
+    
+    # Estados especiales
     CANCELADO = 'cancelado'
     ERROR = 'error'
     
     # Choices para campos de modelo Django
     CHOICES = [
-        (CARGA_ARCHIVOS, 'Carga de Archivos ERP'),
-        (CLASIFICACION_CONCEPTOS, 'Clasificación de Conceptos'),
-        (CARGA_NOVEDADES, 'Carga de Novedades'),
-        (MAPEO_ITEMS, 'Mapeo de Items'),
-        (COMPARACION, 'Comparación en Proceso'),
+        (CARGA_ARCHIVOS, 'Carga de Archivos'),
         (CON_DISCREPANCIAS, 'Con Discrepancias'),
+        (SIN_DISCREPANCIAS, 'Sin Discrepancias'),
         (CONSOLIDADO, 'Consolidado'),
-        (DETECCION_INCIDENCIAS, 'Detectando Incidencias'),
-        (REVISION_INCIDENCIAS, 'Revisión de Incidencias'),
+        (CON_INCIDENCIAS, 'Con Incidencias'),
+        (SIN_INCIDENCIAS, 'Sin Incidencias'),
         (FINALIZADO, 'Finalizado'),
-        (ERROR, 'Error en Proceso'),
+        (CANCELADO, 'Cancelado'),
+        (ERROR, 'Error'),
     ]
     
     # Grupos de estados
     ESTADOS_ACTIVOS = [
         CARGA_ARCHIVOS,
-        CLASIFICACION_CONCEPTOS,
-        CARGA_NOVEDADES,
-        MAPEO_ITEMS,
-        COMPARACION,
         CON_DISCREPANCIAS,
+        SIN_DISCREPANCIAS,
         CONSOLIDADO,
-        DETECCION_INCIDENCIAS,
-        REVISION_INCIDENCIAS,
+        CON_INCIDENCIAS,
+        SIN_INCIDENCIAS,
     ]
     ESTADOS_FINALES = [FINALIZADO, CANCELADO]
     ESTADOS_CON_ERROR = [ERROR]
     
-    # Estados que permiten edición de archivos ERP
-    ESTADOS_EDITABLES = [CARGA_ARCHIVOS, CON_DISCREPANCIAS]
+    # Estados que permiten edición de archivos (solo en hub)
+    ESTADOS_EDITABLES = [CARGA_ARCHIVOS]
     
-    # Estados que permiten carga de archivos del cliente (novedades)
-    ESTADOS_CARGA_NOVEDADES = [CARGA_NOVEDADES, CON_DISCREPANCIAS]
+    # Estados que permiten volver a CARGA_ARCHIVOS
+    ESTADOS_PUEDEN_RETROCEDER = [CON_DISCREPANCIAS, SIN_DISCREPANCIAS]
     
-    # Estados que requieren acción del supervisor
-    ESTADOS_REQUIEREN_SUPERVISOR = [REVISION_INCIDENCIAS]
+    # Estados que requieren acción manual del usuario
+    ESTADOS_REQUIEREN_ACCION_MANUAL = [SIN_DISCREPANCIAS, SIN_INCIDENCIAS]
     
     # Estados que requieren atención/revisión (para dashboard)
-    ESTADOS_REQUIEREN_ATENCION = [DETECCION_INCIDENCIAS, REVISION_INCIDENCIAS]
+    ESTADOS_REQUIEREN_ATENCION = [CON_DISCREPANCIAS, CON_INCIDENCIAS]
     
     # Estados donde se puede finalizar
-    ESTADOS_PUEDEN_FINALIZAR = [CONSOLIDADO, REVISION_INCIDENCIAS, DETECCION_INCIDENCIAS]
+    ESTADOS_PUEDEN_FINALIZAR = [SIN_INCIDENCIAS]
+    
+    # Estados donde se puede consolidar
+    ESTADOS_PUEDEN_CONSOLIDAR = [SIN_DISCREPANCIAS]
+    
+    # Estados donde se puede detectar incidencias
+    ESTADOS_PUEDEN_DETECTAR_INCIDENCIAS = [CONSOLIDADO]
     
     ALL = [
-        CARGA_ARCHIVOS, CLASIFICACION_CONCEPTOS, CARGA_NOVEDADES,
-        MAPEO_ITEMS, COMPARACION, CON_DISCREPANCIAS, CONSOLIDADO,
-        DETECCION_INCIDENCIAS, REVISION_INCIDENCIAS,
+        CARGA_ARCHIVOS, CON_DISCREPANCIAS, SIN_DISCREPANCIAS,
+        CONSOLIDADO, CON_INCIDENCIAS, SIN_INCIDENCIAS,
         FINALIZADO, CANCELADO, ERROR,
     ]
     
@@ -116,6 +121,21 @@ class EstadoCierre:
     def permite_edicion(cls, estado):
         """Verifica si el estado permite editar archivos."""
         return estado in cls.ESTADOS_EDITABLES
+    
+    @classmethod
+    def puede_retroceder(cls, estado):
+        """Verifica si puede volver a CARGA_ARCHIVOS."""
+        return estado in cls.ESTADOS_PUEDEN_RETROCEDER
+    
+    @classmethod
+    def puede_consolidar(cls, estado):
+        """Verifica si puede pasar a CONSOLIDADO."""
+        return estado in cls.ESTADOS_PUEDEN_CONSOLIDAR
+    
+    @classmethod
+    def puede_detectar_incidencias(cls, estado):
+        """Verifica si puede ejecutar detección de incidencias."""
+        return estado in cls.ESTADOS_PUEDEN_DETECTAR_INCIDENCIAS
 
 
 class EstadoIncidencia:
@@ -234,6 +254,71 @@ class EstadoArchivoLibro:
     @classmethod
     def puede_clasificar(cls, estado):
         return estado in cls.ESTADOS_PUEDE_CLASIFICAR
+    
+    @classmethod
+    def puede_procesar(cls, estado):
+        return estado in cls.ESTADOS_PUEDE_PROCESAR
+
+
+class EstadoArchivoNovedades:
+    """
+    Estados específicos para el procesamiento del archivo de Novedades.
+    
+    Flujo (similar al libro):
+        SUBIDO → EXTRAYENDO_HEADERS → PENDIENTE_MAPEO → 
+        LISTO → PROCESANDO → PROCESADO
+                                              ↓
+                                            ERROR
+    
+    La diferencia con el libro es que en vez de "clasificar" conceptos,
+    se "mapean" items del cliente a conceptos ya clasificados del libro.
+    """
+    SUBIDO = 'subido'
+    EXTRAYENDO_HEADERS = 'extrayendo_headers'
+    PENDIENTE_MAPEO = 'pendiente_mapeo'
+    LISTO = 'listo'
+    PROCESANDO = 'procesando'
+    PROCESADO = 'procesado'
+    ERROR = 'error'
+    
+    CHOICES = [
+        (SUBIDO, 'Subido'),
+        (EXTRAYENDO_HEADERS, 'Extrayendo Headers'),
+        (PENDIENTE_MAPEO, 'Pendiente Mapeo'),
+        (LISTO, 'Listo para Procesar'),
+        (PROCESANDO, 'Procesando'),
+        (PROCESADO, 'Procesado'),
+        (ERROR, 'Error'),
+    ]
+    
+    # Estados que permiten extracción de headers
+    ESTADOS_PUEDE_EXTRAER_HEADERS = [SUBIDO]
+    
+    # Estados que permiten mapeo
+    ESTADOS_PUEDE_MAPEAR = [PENDIENTE_MAPEO, LISTO]
+    
+    # Estados que permiten procesamiento
+    ESTADOS_PUEDE_PROCESAR = [LISTO]
+    
+    # Estados en proceso (no terminados)
+    ESTADOS_EN_PROCESO = [EXTRAYENDO_HEADERS, PROCESANDO]
+    
+    ALL = [
+        SUBIDO, EXTRAYENDO_HEADERS, PENDIENTE_MAPEO,
+        LISTO, PROCESANDO, PROCESADO, ERROR
+    ]
+    
+    @classmethod
+    def es_valido(cls, valor):
+        return valor in cls.ALL
+    
+    @classmethod
+    def puede_extraer_headers(cls, estado):
+        return estado in cls.ESTADOS_PUEDE_EXTRAER_HEADERS
+    
+    @classmethod
+    def puede_mapear(cls, estado):
+        return estado in cls.ESTADOS_PUEDE_MAPEAR
     
     @classmethod
     def puede_procesar(cls, estado):

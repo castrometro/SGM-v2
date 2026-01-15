@@ -4,8 +4,9 @@ Modelos del app Validador.
 
 from .cierre import Cierre
 from .archivo import ArchivoERP, ArchivoAnalista
-from .concepto import CategoriaConcepto, ConceptoCliente, MapeoItemNovedades
+from .concepto import CategoriaConcepto, ConceptoCliente
 from .concepto_libro import ConceptoLibro
+from .concepto_novedades import ConceptoNovedades
 from .empleado import EmpleadoCierre, RegistroConcepto, RegistroNovedades
 from .empleado_libro import EmpleadoLibro
 from .registro_libro import RegistroLibro
@@ -22,11 +23,11 @@ __all__ = [
     'ArchivoERP',
     'ArchivoAnalista',
     
-    # Conceptos y Mapeos
+    # Conceptos
     'CategoriaConcepto',
     'ConceptoCliente',
-    'MapeoItemNovedades',
     'ConceptoLibro',
+    'ConceptoNovedades',
     
     # Empleados y Registros
     'EmpleadoCierre',

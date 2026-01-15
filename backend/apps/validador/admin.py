@@ -10,7 +10,7 @@ from .models import (
     CategoriaConcepto,
     ConceptoCliente,
     ConceptoLibro,
-    MapeoItemNovedades,
+    ConceptoNovedades,
     EmpleadoCierre,
     EmpleadoLibro,
     RegistroLibro,
@@ -133,12 +133,18 @@ class ConceptoLibroAdmin(admin.ModelAdmin):
     )
 
 
-@admin.register(MapeoItemNovedades)
-class MapeoItemNovedadesAdmin(admin.ModelAdmin):
-    list_display = ['nombre_novedades', 'concepto_erp', 'cliente', 'fecha_mapeo']
-    list_filter = ['cliente']
-    search_fields = ['nombre_novedades', 'concepto_erp__nombre_erp']
-    raw_id_fields = ['cliente', 'concepto_erp', 'mapeado_por']
+@admin.register(ConceptoNovedades)
+class ConceptoNovedadesAdmin(admin.ModelAdmin):
+    list_display = ['header_original_truncado', 'concepto_libro', 'cliente', 'erp', 'activo', 'fecha_mapeo']
+    list_filter = ['cliente', 'erp', 'activo']
+    search_fields = ['header_original', 'concepto_libro__header_original']
+    raw_id_fields = ['cliente', 'erp', 'concepto_libro', 'creado_por', 'mapeado_por']
+    readonly_fields = ['header_normalizado', 'fecha_creacion', 'fecha_actualizacion']
+    
+    def header_original_truncado(self, obj):
+        return obj.header_original[:50] + '...' if len(obj.header_original) > 50 else obj.header_original
+    header_original_truncado.short_description = 'Header Original'
+    readonly_fields = ['fecha_creacion']
 
 
 @admin.register(EmpleadoCierre)

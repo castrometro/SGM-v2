@@ -69,27 +69,30 @@ export const PUEDEN_SER_SUPERVISORES = Object.freeze([
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Estados del proceso de cierre de nómina.
+ * Estados del proceso de cierre de nómina (7 estados principales).
  * 
  * Flujo principal:
- *   CARGA_ARCHIVOS (Libro ERP) → CLASIFICACION_CONCEPTOS → 
- *   CARGA_NOVEDADES (archivo cliente) → MAPEO_ITEMS → COMPARACION →
- *   CON_DISCREPANCIAS (loop) → CONSOLIDADO →
- *   DETECCION_INCIDENCIAS → REVISION_INCIDENCIAS → FINALIZADO
+ *   CARGA_ARCHIVOS (hub único: ERP + clasificación + novedades + mapeo)
+ *   → [Generar Comparación]
+ *   → CON_DISCREPANCIAS / SIN_DISCREPANCIAS
+ *   → [Click manual] → CONSOLIDADO
+ *   → [Detectar Incidencias manual]
+ *   → CON_INCIDENCIAS / SIN_INCIDENCIAS
+ *   → FINALIZADO
  * 
- * IMPORTANTE: El archivo de novedades se carga DESPUÉS de procesar el libro.
+ * IMPORTANTE:
+ * - CARGA_ARCHIVOS es el hub donde se hace todo el trabajo de preparación
+ * - SIN_DISCREPANCIAS requiere click manual para pasar a CONSOLIDADO
+ * - Se puede volver a CARGA_ARCHIVOS desde CON/SIN_DISCREPANCIAS
  */
 export const ESTADO_CIERRE = Object.freeze({
-  CARGA_ARCHIVOS: 'carga_archivos',  // Solo archivos ERP (Libro)
-  CLASIFICACION_CONCEPTOS: 'clasificacion_conceptos',
-  CARGA_NOVEDADES: 'carga_novedades',  // Archivos del cliente (después del libro)
-  MAPEO_ITEMS: 'mapeo_items',
-  COMPARACION: 'comparacion',
-  CON_DISCREPANCIAS: 'con_discrepancias',
-  CONSOLIDADO: 'consolidado',
-  DETECCION_INCIDENCIAS: 'deteccion_incidencias',
-  REVISION_INCIDENCIAS: 'revision_incidencias',
-  FINALIZADO: 'finalizado',
+  CARGA_ARCHIVOS: 'carga_archivos',       // Hub único: ERP + clasificación + novedades + mapeo
+  CON_DISCREPANCIAS: 'con_discrepancias', // Hay diferencias por resolver
+  SIN_DISCREPANCIAS: 'sin_discrepancias', // 0 discrepancias, requiere click manual
+  CONSOLIDADO: 'consolidado',             // Datos validados y confirmados
+  CON_INCIDENCIAS: 'con_incidencias',     // Hay incidencias por resolver
+  SIN_INCIDENCIAS: 'sin_incidencias',     // No hay incidencias
+  FINALIZADO: 'finalizado',               // Proceso completo
   CANCELADO: 'cancelado',
   ERROR: 'error',
 })
@@ -99,14 +102,11 @@ export const ESTADO_CIERRE = Object.freeze({
  */
 export const ESTADOS_CIERRE_ACTIVOS = Object.freeze([
   ESTADO_CIERRE.CARGA_ARCHIVOS,
-  ESTADO_CIERRE.CLASIFICACION_CONCEPTOS,
-  ESTADO_CIERRE.CARGA_NOVEDADES,
-  ESTADO_CIERRE.MAPEO_ITEMS,
-  ESTADO_CIERRE.COMPARACION,
   ESTADO_CIERRE.CON_DISCREPANCIAS,
+  ESTADO_CIERRE.SIN_DISCREPANCIAS,
   ESTADO_CIERRE.CONSOLIDADO,
-  ESTADO_CIERRE.DETECCION_INCIDENCIAS,
-  ESTADO_CIERRE.REVISION_INCIDENCIAS,
+  ESTADO_CIERRE.CON_INCIDENCIAS,
+  ESTADO_CIERRE.SIN_INCIDENCIAS,
 ])
 
 /**
@@ -118,29 +118,47 @@ export const ESTADOS_CIERRE_FINALES = Object.freeze([
 ])
 
 /**
- * Estados que permiten edición de archivos ERP
+ * Estados que permiten edición de archivos (solo en hub)
  */
 export const ESTADOS_CIERRE_EDITABLES = Object.freeze([
   ESTADO_CIERRE.CARGA_ARCHIVOS,
-  ESTADO_CIERRE.CON_DISCREPANCIAS,
 ])
 
 /**
- * Estados que permiten carga de archivos del cliente (novedades)
- * Las novedades se cargan DESPUÉS de procesar el libro de remuneraciones
+ * Estados que permiten volver a CARGA_ARCHIVOS
  */
-export const ESTADOS_CARGA_NOVEDADES = Object.freeze([
-  ESTADO_CIERRE.CARGA_NOVEDADES,
+export const ESTADOS_PUEDEN_RETROCEDER = Object.freeze([
   ESTADO_CIERRE.CON_DISCREPANCIAS,
+  ESTADO_CIERRE.SIN_DISCREPANCIAS,
+])
+
+/**
+ * Estados que requieren acción manual del usuario
+ */
+export const ESTADOS_REQUIEREN_ACCION_MANUAL = Object.freeze([
+  ESTADO_CIERRE.SIN_DISCREPANCIAS,
+  ESTADO_CIERRE.SIN_INCIDENCIAS,
 ])
 
 /**
  * Estados donde se puede finalizar el cierre
  */
 export const ESTADOS_PUEDEN_FINALIZAR = Object.freeze([
+  ESTADO_CIERRE.SIN_INCIDENCIAS,
+])
+
+/**
+ * Estados donde se puede consolidar
+ */
+export const ESTADOS_PUEDEN_CONSOLIDAR = Object.freeze([
+  ESTADO_CIERRE.SIN_DISCREPANCIAS,
+])
+
+/**
+ * Estados donde se puede detectar incidencias
+ */
+export const ESTADOS_PUEDEN_DETECTAR_INCIDENCIAS = Object.freeze([
   ESTADO_CIERRE.CONSOLIDADO,
-  ESTADO_CIERRE.REVISION_INCIDENCIAS,
-  ESTADO_CIERRE.DETECCION_INCIDENCIAS,
 ])
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -264,6 +282,76 @@ export const puedeProcesarLibro = (estado) => ESTADOS_LIBRO_PUEDE_PROCESAR.inclu
  * @returns {boolean}
  */
 export const libroRequiereAccion = (estado) => ESTADOS_LIBRO_REQUIERE_ACCION.includes(estado)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ESTADOS DE ARCHIVO NOVEDADES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Estados específicos para el procesamiento del archivo de Novedades.
+ * Sincronizado con: backend/apps/validador/constants.py - EstadoArchivoNovedades
+ * 
+ * Flujo:
+ *   SUBIDO → EXTRAYENDO_HEADERS → PENDIENTE_MAPEO → 
+ *   LISTO → PROCESANDO → PROCESADO
+ *                                    ↓
+ *                                  ERROR
+ * 
+ * IMPORTANTE: Las novedades se cargan DESPUÉS de que el libro esté procesado.
+ * El mapeo conecta items de novedades con ConceptoLibro (headers del libro).
+ */
+export const ESTADO_ARCHIVO_NOVEDADES = Object.freeze({
+  SUBIDO: 'subido',
+  EXTRAYENDO_HEADERS: 'extrayendo_headers',
+  PENDIENTE_MAPEO: 'pendiente_mapeo',
+  LISTO: 'listo',
+  PROCESANDO: 'procesando',
+  PROCESADO: 'procesado',
+  ERROR: 'error',
+})
+
+/**
+ * Estados que permiten mapeo de items de novedades
+ */
+export const ESTADOS_NOVEDADES_PUEDE_MAPEAR = Object.freeze([
+  ESTADO_ARCHIVO_NOVEDADES.PENDIENTE_MAPEO,
+  ESTADO_ARCHIVO_NOVEDADES.LISTO,
+])
+
+/**
+ * Estados que permiten procesar las novedades
+ */
+export const ESTADOS_NOVEDADES_PUEDE_PROCESAR = Object.freeze([
+  ESTADO_ARCHIVO_NOVEDADES.LISTO,
+])
+
+/**
+ * Estados que requieren acción del usuario (mapeo de items)
+ */
+export const ESTADOS_NOVEDADES_REQUIERE_ACCION = Object.freeze([
+  ESTADO_ARCHIVO_NOVEDADES.PENDIENTE_MAPEO,
+])
+
+/**
+ * Verifica si el estado de novedades permite mapeo
+ * @param {string} estado - Estado del archivo de novedades
+ * @returns {boolean}
+ */
+export const puedeMapearNovedades = (estado) => ESTADOS_NOVEDADES_PUEDE_MAPEAR.includes(estado)
+
+/**
+ * Verifica si el estado de novedades permite procesamiento
+ * @param {string} estado - Estado del archivo de novedades
+ * @returns {boolean}
+ */
+export const puedeProcesarNovedades = (estado) => ESTADOS_NOVEDADES_PUEDE_PROCESAR.includes(estado)
+
+/**
+ * Verifica si las novedades requieren acción del usuario (mapeo pendiente)
+ * @param {string} estado - Estado del archivo de novedades
+ * @returns {boolean}
+ */
+export const novedadesRequiereAccion = (estado) => ESTADOS_NOVEDADES_REQUIERE_ACCION.includes(estado)
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TIPOS DE ARCHIVOS

@@ -1,6 +1,6 @@
 """
 Modelos de Concepto para el Validador de Nómina.
-Maneja la clasificación de headers del Libro de Remuneraciones.
+Maneja la clasificación de headers del Libro de Remuneraciones y Novedades.
 """
 
 from django.db import models
@@ -125,49 +125,3 @@ class ConceptoCliente(models.Model):
         if not self.categoria:
             return False
         return self.categoria.se_compara
-
-
-class MapeoItemNovedades(models.Model):
-    """
-    Mapeo 1:1 entre items de Novedades (cliente) y Conceptos del Libro (ERP).
-    Se guarda por cliente para reutilizar en futuros cierres.
-    """
-    
-    cliente = models.ForeignKey(
-        Cliente,
-        on_delete=models.CASCADE,
-        related_name='mapeos_items'
-    )
-    
-    # Nombre del item en el archivo de Novedades (del cliente)
-    nombre_novedades = models.CharField(
-        max_length=200,
-        help_text='Nombre del item como aparece en Novedades'
-    )
-    
-    # Concepto del ERP al que mapea
-    concepto_erp = models.ForeignKey(
-        ConceptoCliente,
-        on_delete=models.CASCADE,
-        related_name='mapeos_novedades'
-    )
-    
-    # Quién hizo el mapeo
-    mapeado_por = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True
-    )
-    fecha_mapeo = models.DateTimeField(auto_now_add=True)
-    
-    # Notas sobre el mapeo
-    notas = models.TextField(blank=True)
-    
-    class Meta:
-        verbose_name = 'Mapeo Item Novedades'
-        verbose_name_plural = 'Mapeos Items Novedades'
-        unique_together = ['cliente', 'nombre_novedades']
-        ordering = ['cliente', 'nombre_novedades']
-    
-    def __str__(self):
-        return f"{self.nombre_novedades} → {self.concepto_erp.nombre_erp}"

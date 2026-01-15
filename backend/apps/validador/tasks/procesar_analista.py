@@ -10,6 +10,168 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3)
+def extraer_headers_novedades(self, archivo_id, usuario_id=None):
+    """
+    Extrae los headers (items) del archivo de Novedades.
+    
+    Similar a extraer_headers_libro, pero para el archivo del cliente.
+    Crea ConceptoNovedades por cada columna que no sea RUT/identificación.
+    Busca ConceptoLibro existentes para auto-mapear por coincidencia de nombre.
+    
+    Flujo:
+        1. Lee primera fila del archivo
+        2. Identifica columnas de items (no RUT, nombre, etc.)
+        3. Crea ConceptoNovedades por cada columna (o reutiliza existente)
+        4. Busca coincidencias con ConceptoLibro por nombre normalizado
+        5. Actualiza estado: pendiente_mapeo o listo
+    
+    Args:
+        archivo_id: ID del ArchivoAnalista tipo='novedades'
+        usuario_id: ID del usuario que inició la tarea
+    """
+    from apps.validador.models import ArchivoAnalista, ConceptoNovedades, ConceptoLibro
+    from apps.validador.constants import EstadoArchivoNovedades
+    import pandas as pd
+    import unicodedata
+    import re
+    
+    def normalizar_header(header: str) -> str:
+        """Normaliza header para comparación."""
+        texto = str(header).lower().strip()
+        texto = unicodedata.normalize('NFD', texto)
+        texto = ''.join(c for c in texto if unicodedata.category(c) != 'Mn')
+        texto = re.sub(r'[^a-z0-9\s]', '', texto)
+        texto = re.sub(r'\s+', '_', texto.strip())
+        return texto
+    
+    try:
+        archivo = ArchivoAnalista.objects.select_related(
+            'cierre__cliente'
+        ).get(id=archivo_id)
+        
+        if archivo.tipo != 'novedades':
+            raise ValueError(f"Archivo no es de tipo novedades: {archivo.tipo}")
+        
+        archivo.estado = EstadoArchivoNovedades.EXTRAYENDO_HEADERS
+        archivo.save()
+        
+        logger.info(f"Extrayendo headers de novedades: {archivo.nombre_original}")
+        
+        cierre = archivo.cierre
+        cliente = cierre.cliente
+        
+        # Obtener ERP activo del cliente (desde configuraciones_erp)
+        config_erp = cliente.configuraciones_erp.filter(activo=True).select_related('erp').first()
+        if not config_erp:
+            raise ValueError(f"Cliente {cliente.rut} no tiene ERP activo configurado")
+        erp = config_erp.erp
+        
+        # Leer archivo
+        if archivo.extension == '.csv':
+            df = pd.read_csv(archivo.archivo.path, nrows=1)
+        else:
+            df = pd.read_excel(archivo.archivo.path, nrows=1)
+        
+        # Columnas que NO son items (identificación)
+        columnas_ignoradas = ['rut', 'nombre', 'fecha', 'periodo', 'observacion', 'observaciones']
+        
+        # Filtrar columnas de items
+        headers = []
+        for col in df.columns:
+            col_lower = col.lower().strip()
+            if col_lower not in columnas_ignoradas:
+                headers.append(col.strip())
+        
+        if not headers:
+            raise ValueError("No se encontraron columnas de items en el archivo")
+        
+        # Obtener ConceptoLibro existentes para auto-mapeo
+        conceptos_libro_dict = {}
+        for cl in ConceptoLibro.objects.filter(cliente=cliente, erp=erp, activo=True):
+            key = normalizar_header(cl.header_original)
+            conceptos_libro_dict[key] = cl
+        
+        # Crear o reutilizar ConceptoNovedades por cada header
+        conceptos_creados = 0
+        conceptos_mapeados = 0
+        
+        for orden, header_original in enumerate(headers, start=1):
+            header_normalizado = normalizar_header(header_original)
+            
+            # Buscar concepto existente para este cliente+ERP+header
+            concepto, created = ConceptoNovedades.objects.get_or_create(
+                cliente=cliente,
+                erp=erp,
+                header_normalizado=header_normalizado,
+                defaults={
+                    'header_original': header_original,
+                    'orden': orden,
+                    'activo': True,
+                }
+            )
+            
+            if created:
+                conceptos_creados += 1
+                # Intentar auto-mapear por coincidencia de nombre normalizado
+                if header_normalizado in conceptos_libro_dict:
+                    concepto.concepto_libro = conceptos_libro_dict[header_normalizado]
+                    concepto.save()
+                    conceptos_mapeados += 1
+            else:
+                # Actualizar orden si cambió
+                if concepto.orden != orden:
+                    concepto.orden = orden
+                    concepto.save()
+                
+                if concepto.concepto_libro:
+                    conceptos_mapeados += 1
+        
+        # Contar total de conceptos activos para este cliente+ERP
+        total_conceptos = ConceptoNovedades.objects.filter(
+            cliente=cliente, erp=erp, activo=True
+        ).count()
+        
+        total_sin_mapear = ConceptoNovedades.objects.filter(
+            cliente=cliente, erp=erp, activo=True, concepto_libro__isnull=True
+        ).count()
+        
+        # Determinar estado: si todos mapeados → listo, sino → pendiente_mapeo
+        if total_sin_mapear == 0:
+            archivo.estado = EstadoArchivoNovedades.LISTO
+        else:
+            archivo.estado = EstadoArchivoNovedades.PENDIENTE_MAPEO
+        
+        archivo.save()
+        
+        logger.info(
+            f"Headers novedades extraídos: {len(headers)} en archivo, "
+            f"{conceptos_creados} nuevos, {conceptos_mapeados} auto-mapeados"
+        )
+        
+        return {
+            'headers_archivo': len(headers),
+            'conceptos_nuevos': conceptos_creados,
+            'conceptos_mapeados': conceptos_mapeados,
+            'total_conceptos': total_conceptos,
+            'sin_mapear': total_sin_mapear,
+            'estado': archivo.estado,
+        }
+        
+    except Exception as e:
+        logger.error(f"Error extrayendo headers novedades {archivo_id}: {str(e)}")
+        
+        try:
+            archivo = ArchivoAnalista.objects.get(id=archivo_id)
+            archivo.estado = EstadoArchivoNovedades.ERROR
+            archivo.errores_procesamiento = [str(e)]
+            archivo.save()
+        except:
+            pass
+        
+        raise self.retry(exc=e, countdown=60)
+
+
+@shared_task(bind=True, max_retries=3)
 def procesar_archivo_analista(self, archivo_id, usuario_id=None):
     """
     Procesa un archivo del Analista (Novedades, Asistencias, Finiquitos, Ingresos).
@@ -71,7 +233,18 @@ def procesar_archivo_analista(self, archivo_id, usuario_id=None):
 def _procesar_novedades(archivo):
     """Procesa el archivo de Novedades del cliente."""
     import pandas as pd
-    from apps.validador.models import RegistroNovedades, MapeoItemNovedades
+    import unicodedata
+    import re
+    from apps.validador.models import RegistroNovedades, ConceptoNovedades
+    
+    def normalizar_header(header: str) -> str:
+        """Normaliza header para comparación."""
+        texto = str(header).lower().strip()
+        texto = unicodedata.normalize('NFD', texto)
+        texto = ''.join(c for c in texto if unicodedata.category(c) != 'Mn')
+        texto = re.sub(r'[^a-z0-9\s]', '', texto)
+        texto = re.sub(r'\s+', '_', texto.strip())
+        return texto
     
     # Leer archivo
     if archivo.extension == '.csv':
@@ -115,13 +288,15 @@ def _procesar_novedades(archivo):
             if monto == 0:
                 continue
             
-            # Buscar mapeo existente
-            mapeo = MapeoItemNovedades.objects.filter(
+            # Buscar ConceptoNovedades por header normalizado
+            header_normalizado = normalizar_header(nombre_item)
+            concepto = ConceptoNovedades.objects.filter(
                 cliente=cliente,
-                nombre_novedades=nombre_item.strip()
-            ).first()
+                header_normalizado=header_normalizado,
+                activo=True
+            ).select_related('concepto_libro').first()
             
-            if not mapeo:
+            if not concepto or not concepto.concepto_libro:
                 items_nuevos.add(nombre_item.strip())
             
             RegistroNovedades.objects.create(
@@ -129,7 +304,7 @@ def _procesar_novedades(archivo):
                 rut_empleado=rut,
                 nombre_empleado=nombre,
                 nombre_item=nombre_item.strip(),
-                mapeo=mapeo,
+                concepto_novedades=concepto,
                 monto=monto,
             )
             registros_creados += 1

@@ -5,7 +5,14 @@ Centraliza toda la lógica de:
 - Cambios de estado
 - Validaciones de transiciones
 - Consolidación
+- Detección de incidencias
 - Finalización
+
+Flujo de estados (7 principales):
+    CARGA_ARCHIVOS → [Generar Comparación] → CON/SIN_DISCREPANCIAS
+    SIN_DISCREPANCIAS → [Click manual] → CONSOLIDADO
+    CONSOLIDADO → [Detectar Incidencias manual] → CON/SIN_INCIDENCIAS
+    SIN_INCIDENCIAS → [Finalizar] → FINALIZADO
 """
 
 from django.utils import timezone
@@ -30,19 +37,43 @@ class CierreService(BaseService):
             cierre_actualizado = result.data
     """
     
-    # Transiciones de estado permitidas
+    # Transiciones de estado permitidas (nuevo flujo de 7 estados)
     TRANSICIONES_VALIDAS = {
-        EstadoCierre.CARGA_ARCHIVOS: [EstadoCierre.CLASIFICACION_CONCEPTOS, EstadoCierre.MAPEO_ITEMS, EstadoCierre.COMPARACION],
-        EstadoCierre.CLASIFICACION_CONCEPTOS: [EstadoCierre.MAPEO_ITEMS, EstadoCierre.COMPARACION],
-        EstadoCierre.MAPEO_ITEMS: [EstadoCierre.COMPARACION],
-        EstadoCierre.COMPARACION: [EstadoCierre.CON_DISCREPANCIAS, EstadoCierre.CONSOLIDADO],
-        EstadoCierre.CON_DISCREPANCIAS: [EstadoCierre.COMPARACION, EstadoCierre.CONSOLIDADO],
-        EstadoCierre.CONSOLIDADO: [EstadoCierre.DETECCION_INCIDENCIAS, EstadoCierre.FINALIZADO],  # finalizado si es primer cierre
-        EstadoCierre.DETECCION_INCIDENCIAS: [EstadoCierre.REVISION_INCIDENCIAS, EstadoCierre.FINALIZADO],
-        EstadoCierre.REVISION_INCIDENCIAS: [EstadoCierre.FINALIZADO, EstadoCierre.DETECCION_INCIDENCIAS],
-        EstadoCierre.FINALIZADO: [],  # Estado final
-        EstadoCierre.CANCELADO: [],   # Estado final
-        EstadoCierre.ERROR: [EstadoCierre.CARGA_ARCHIVOS],
+        # Desde hub de carga → comparación genera discrepancias o no
+        EstadoCierre.CARGA_ARCHIVOS: [
+            EstadoCierre.CON_DISCREPANCIAS,
+            EstadoCierre.SIN_DISCREPANCIAS,
+        ],
+        # Puede volver a carga o pasar a sin_discrepancias al resolver todas
+        EstadoCierre.CON_DISCREPANCIAS: [
+            EstadoCierre.CARGA_ARCHIVOS,      # Volver a corregir archivos
+            EstadoCierre.SIN_DISCREPANCIAS,   # Al resolver todas las discrepancias
+        ],
+        # Requiere click manual para consolidar, puede volver a carga
+        EstadoCierre.SIN_DISCREPANCIAS: [
+            EstadoCierre.CONSOLIDADO,         # Click manual
+            EstadoCierre.CARGA_ARCHIVOS,      # Volver a corregir
+        ],
+        # Desde consolidado → detectar incidencias (manual)
+        EstadoCierre.CONSOLIDADO: [
+            EstadoCierre.CON_INCIDENCIAS,
+            EstadoCierre.SIN_INCIDENCIAS,
+        ],
+        # Resolver incidencias lleva a sin_incidencias
+        EstadoCierre.CON_INCIDENCIAS: [
+            EstadoCierre.SIN_INCIDENCIAS,     # Al resolver todas
+        ],
+        # Desde sin_incidencias → finalizar
+        EstadoCierre.SIN_INCIDENCIAS: [
+            EstadoCierre.FINALIZADO,
+        ],
+        # Estados finales
+        EstadoCierre.FINALIZADO: [],
+        EstadoCierre.CANCELADO: [],
+        # Desde error se puede volver a carga
+        EstadoCierre.ERROR: [
+            EstadoCierre.CARGA_ARCHIVOS,
+        ],
     }
     
     @classmethod
@@ -124,57 +155,139 @@ class CierreService(BaseService):
             return ServiceResult.fail(f'Error al cambiar estado: {str(e)}')
     
     @classmethod
-    def consolidar(cls, cierre: Cierre, user=None) -> ServiceResult[Cierre]:
+    def generar_comparacion(cls, cierre: Cierre, user=None) -> ServiceResult[Cierre]:
         """
-        Consolidar un cierre.
+        Generar comparación ERP vs Novedades.
         
         Validaciones:
-        - No debe haber discrepancias pendientes
-        - Debe estar en estado 'comparacion'
+        - Debe estar en estado CARGA_ARCHIVOS
+        - Libro ERP debe estar procesado
+        - Todos los conceptos clasificados
+        - Novedades procesadas
+        - Todos los headers mapeados
         
-        Si es primer cierre, finaliza automáticamente.
+        Returns:
+            ServiceResult con cierre en estado CON_DISCREPANCIAS o SIN_DISCREPANCIAS
         """
         logger = cls.get_logger()
         
-        # Validar que pueda consolidar
-        if not cierre.puede_consolidar:
+        # Validar estado actual
+        if cierre.estado != EstadoCierre.CARGA_ARCHIVOS:
             return ServiceResult.fail(
-                'No se puede consolidar. Hay discrepancias pendientes o archivos faltantes.'
-            )
-        
-        if cierre.estado != EstadoCierre.COMPARACION:
-            return ServiceResult.fail(
-                f'Solo se puede consolidar desde estado "comparacion". Estado actual: {cierre.estado}'
+                f'Solo se puede generar comparación desde estado "carga_archivos". '
+                f'Estado actual: {cierre.estado}'
             )
         
         try:
             with transaction.atomic():
-                # Cambiar a consolidado
-                result = cls.cambiar_estado(cierre, EstadoCierre.CONSOLIDADO, user, validar_transicion=False)
-                if not result.success:
-                    return result
+                # TODO: Validar prerrequisitos
+                # - Libro ERP procesado
+                # - Conceptos clasificados
+                # - Novedades procesadas
+                # - Headers mapeados
                 
-                cierre = result.data
+                # TODO: Ejecutar task de comparación real
+                # Por ahora, verificamos si hay discrepancias existentes
+                tiene_discrepancias = cierre.discrepancias.exists()
                 
-                # Si es primer cierre, finalizar automáticamente
-                if cierre.es_primer_cierre:
-                    logger.info(f"Cierre {cierre.id} es primer cierre, finalizando automáticamente")
-                    return cls.finalizar(cierre, user)
+                if tiene_discrepancias:
+                    nuevo_estado = EstadoCierre.CON_DISCREPANCIAS
+                else:
+                    nuevo_estado = EstadoCierre.SIN_DISCREPANCIAS
                 
-                # Si no, pasar a detección de incidencias
-                result = cls.cambiar_estado(cierre, EstadoCierre.DETECCION_INCIDENCIAS, user, validar_transicion=False)
-                if not result.success:
-                    return result
+                result = cls.cambiar_estado(cierre, nuevo_estado, user)
                 
-                # TODO: Disparar task de detección de incidencias
-                # from ..tasks import detectar_incidencias
-                # detectar_incidencias.delay(cierre.id)
+                if result.success:
+                    logger.info(
+                        f"Cierre {cierre.id} comparación generada. "
+                        f"Discrepancias: {tiene_discrepancias}. Estado: {nuevo_estado}"
+                    )
                 
-                return ServiceResult.ok(result.data)
+                return result
                 
+        except Exception as e:
+            logger.error(f"Error al generar comparación en cierre {cierre.id}: {str(e)}")
+            return ServiceResult.fail(f'Error al generar comparación: {str(e)}')
+    
+    @classmethod
+    def consolidar(cls, cierre: Cierre, user=None) -> ServiceResult[Cierre]:
+        """
+        Consolidar un cierre (transición manual desde SIN_DISCREPANCIAS).
+        
+        Validaciones:
+        - Debe estar en estado SIN_DISCREPANCIAS
+        - No debe haber discrepancias pendientes
+        
+        Esta transición es SIEMPRE manual - el analista debe confirmar.
+        """
+        logger = cls.get_logger()
+        
+        # Validar estado actual
+        if cierre.estado != EstadoCierre.SIN_DISCREPANCIAS:
+            return ServiceResult.fail(
+                f'Solo se puede consolidar desde estado "sin_discrepancias". Estado actual: {cierre.estado}'
+            )
+        
+        # Validar que no haya discrepancias pendientes
+        if cierre.total_discrepancias > cierre.discrepancias_resueltas:
+            return ServiceResult.fail(
+                'No se puede consolidar. Aún hay discrepancias pendientes.'
+            )
+        
+        try:
+            result = cls.cambiar_estado(cierre, EstadoCierre.CONSOLIDADO, user)
+            
+            if result.success:
+                logger.info(f"Cierre {cierre.id} consolidado por {user}")
+                
+            return result
+            
         except Exception as e:
             logger.error(f"Error al consolidar cierre {cierre.id}: {str(e)}")
             return ServiceResult.fail(f'Error al consolidar: {str(e)}')
+    
+    @classmethod
+    def detectar_incidencias(cls, cierre: Cierre, user=None) -> ServiceResult[Cierre]:
+        """
+        Detectar incidencias (transición manual desde CONSOLIDADO).
+        
+        Validaciones:
+        - Debe estar en estado CONSOLIDADO
+        
+        Cambia a CON_INCIDENCIAS o SIN_INCIDENCIAS según el resultado.
+        """
+        logger = cls.get_logger()
+        
+        # Validar estado actual
+        if cierre.estado != EstadoCierre.CONSOLIDADO:
+            return ServiceResult.fail(
+                f'Solo se puede detectar incidencias desde estado "consolidado". Estado actual: {cierre.estado}'
+            )
+        
+        try:
+            with transaction.atomic():
+                # TODO: Ejecutar lógica de detección de incidencias
+                # Por ahora, verificamos si ya hay incidencias creadas
+                tiene_incidencias = cierre.incidencias.exists()
+                
+                if tiene_incidencias:
+                    nuevo_estado = EstadoCierre.CON_INCIDENCIAS
+                else:
+                    nuevo_estado = EstadoCierre.SIN_INCIDENCIAS
+                
+                result = cls.cambiar_estado(cierre, nuevo_estado, user)
+                
+                if result.success:
+                    logger.info(
+                        f"Cierre {cierre.id} detectó incidencias: {tiene_incidencias}. "
+                        f"Nuevo estado: {nuevo_estado}"
+                    )
+                
+                return result
+                
+        except Exception as e:
+            logger.error(f"Error al detectar incidencias en cierre {cierre.id}: {str(e)}")
+            return ServiceResult.fail(f'Error al detectar incidencias: {str(e)}')
     
     @classmethod
     def finalizar(cls, cierre: Cierre, user=None) -> ServiceResult[Cierre]:
@@ -182,24 +295,17 @@ class CierreService(BaseService):
         Finalizar un cierre.
         
         Validaciones:
-        - Todas las incidencias deben estar resueltas
-        - Debe estar en estado permitido para finalizar
+        - Debe estar en estado SIN_INCIDENCIAS
         """
         logger = cls.get_logger()
         
-        if not cierre.puede_finalizar:
+        if cierre.estado != EstadoCierre.SIN_INCIDENCIAS:
             return ServiceResult.fail(
-                'No se puede finalizar. Hay incidencias pendientes de aprobación.'
-            )
-        
-        estados_permitidos = EstadoCierre.ESTADOS_PUEDEN_FINALIZAR
-        if cierre.estado not in estados_permitidos:
-            return ServiceResult.fail(
-                f'Solo se puede finalizar desde estados {estados_permitidos}. Estado actual: {cierre.estado}'
+                f'Solo se puede finalizar desde estado "sin_incidencias". Estado actual: {cierre.estado}'
             )
         
         try:
-            result = cls.cambiar_estado(cierre, EstadoCierre.FINALIZADO, user, validar_transicion=False)
+            result = cls.cambiar_estado(cierre, EstadoCierre.FINALIZADO, user)
             
             if result.success:
                 logger.info(f"Cierre {cierre.id} finalizado por {user}")
@@ -209,6 +315,34 @@ class CierreService(BaseService):
         except Exception as e:
             logger.error(f"Error al finalizar cierre {cierre.id}: {str(e)}")
             return ServiceResult.fail(f'Error al finalizar: {str(e)}')
+    
+    @classmethod
+    def volver_a_carga(cls, cierre: Cierre, user=None) -> ServiceResult[Cierre]:
+        """
+        Volver a estado CARGA_ARCHIVOS para corregir archivos.
+        
+        Permitido desde:
+        - CON_DISCREPANCIAS
+        - SIN_DISCREPANCIAS
+        """
+        logger = cls.get_logger()
+        
+        if not EstadoCierre.puede_retroceder(cierre.estado):
+            return ServiceResult.fail(
+                f'No se puede volver a carga desde estado "{cierre.estado}"'
+            )
+        
+        try:
+            result = cls.cambiar_estado(cierre, EstadoCierre.CARGA_ARCHIVOS, user)
+            
+            if result.success:
+                logger.info(f"Cierre {cierre.id} volvió a carga_archivos por {user}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error al volver a carga cierre {cierre.id}: {str(e)}")
+            return ServiceResult.fail(f'Error al volver a carga: {str(e)}')
     
     @classmethod
     def obtener_resumen(cls, cierre: Cierre) -> Dict[str, Any]:

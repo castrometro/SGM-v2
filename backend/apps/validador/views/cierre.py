@@ -98,6 +98,32 @@ class CierreViewSet(viewsets.ModelViewSet):
         instance.delete()
     
     @action(detail=True, methods=['post'])
+    def generar_comparacion(self, request, pk=None):
+        """
+        Generar comparación ERP vs Novedades.
+        
+        Prerrequisitos (validados en frontend):
+        - Libro ERP procesado
+        - Conceptos clasificados
+        - Novedades procesadas
+        - Headers mapeados
+        """
+        cierre = self.get_object()
+        
+        result = CierreService.generar_comparacion(cierre, user=request.user)
+        
+        if not result.success:
+            return Response(
+                {'error': result.error},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        return Response({
+            'message': 'Comparación generada exitosamente',
+            'cierre': CierreDetailSerializer(result.data).data
+        })
+    
+    @action(detail=True, methods=['post'])
     def cambiar_estado(self, request, pk=None):
         """Cambiar el estado del cierre."""
         cierre = self.get_object()
@@ -172,6 +198,53 @@ class CierreViewSet(viewsets.ModelViewSet):
         
         return Response({
             'message': 'Cierre finalizado exitosamente',
+            'cierre': CierreDetailSerializer(result.data).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def detectar_incidencias(self, request, pk=None):
+        """
+        Detectar incidencias (transición manual desde CONSOLIDADO).
+        
+        Compara con cierres anteriores para detectar anomalías.
+        """
+        cierre = self.get_object()
+        
+        result = CierreService.detectar_incidencias(cierre, user=request.user)
+        
+        if not result.success:
+            return Response(
+                {'error': result.error},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        cierre_actualizado = result.data
+        tiene_incidencias = cierre_actualizado.estado == EstadoCierre.CON_INCIDENCIAS
+        
+        return Response({
+            'message': f'Detección completada. {"Se encontraron incidencias." if tiene_incidencias else "Sin incidencias."}',
+            'cierre': CierreDetailSerializer(cierre_actualizado).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def volver_a_carga(self, request, pk=None):
+        """
+        Volver a estado CARGA_ARCHIVOS para corregir archivos.
+        
+        Permitido desde CON_DISCREPANCIAS o SIN_DISCREPANCIAS.
+        """
+        cierre = self.get_object()
+        
+        result = CierreService.volver_a_carga(cierre, user=request.user)
+        
+        if not result.success:
+            return Response(
+                {'error': result.error},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        return Response({
+            'message': 'Volviendo a carga de archivos',
             'cierre': CierreDetailSerializer(result.data).data
         })
 

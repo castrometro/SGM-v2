@@ -18,9 +18,8 @@ from .concepto import (
     ConceptoClienteSerializer,
     ConceptoClienteClasificarSerializer,
     ConceptoSinClasificarSerializer,
-    MapeoItemNovedadesSerializer,
-    MapeoItemCrearSerializer,
-    ItemSinMapearSerializer,
+    ConceptoNovedadesSerializer,
+    ConceptoNovedadesSinMapearSerializer,
 )
 from .libro import (
     ConceptoLibroSerializer,
@@ -71,9 +70,8 @@ __all__ = [
     'ConceptoClienteSerializer',
     'ConceptoClienteClasificarSerializer',
     'ConceptoSinClasificarSerializer',
-    'MapeoItemNovedadesSerializer',
-    'MapeoItemCrearSerializer',
-    'ItemSinMapearSerializer',
+    'ConceptoNovedadesSerializer',
+    'ConceptoNovedadesSinMapearSerializer',
     
     # Libro
     'ConceptoLibroSerializer',

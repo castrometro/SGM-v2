@@ -8,16 +8,17 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 
-from ..models import CategoriaConcepto, ConceptoCliente, MapeoItemNovedades, RegistroNovedades
+from ..models import (
+    CategoriaConcepto, ConceptoCliente, 
+    RegistroNovedades, ConceptoLibro, ConceptoNovedades, ArchivoAnalista
+)
 from ..serializers import (
     CategoriaConceptoSerializer,
     ConceptoClienteSerializer,
     ConceptoClienteClasificarSerializer,
     ConceptoSinClasificarSerializer,
-    MapeoItemNovedadesSerializer,
-    MapeoItemCrearSerializer,
-    ItemSinMapearSerializer,
 )
+from ..constants import EstadoArchivoNovedades
 
 
 class CategoriaConceptoViewSet(viewsets.ReadOnlyModelViewSet):
@@ -110,103 +111,187 @@ class ConceptoClienteViewSet(viewsets.ModelViewSet):
 
 
 class MapeoItemNovedadesViewSet(viewsets.ModelViewSet):
-    """ViewSet para mapeos de items de novedades."""
+    """
+    ViewSet para ConceptoNovedades (antes MapeoItemNovedades).
+    
+    Los conceptos de novedades conectan headers del archivo de novedades (del cliente)
+    con ConceptoLibro (headers clasificados del libro ERP).
+    
+    Los mapeos son por cliente+ERP y se reutilizan entre cierres.
+    Similar en patrón a ConceptoLibro, pero con FK a ConceptoLibro en vez de categoria.
+    """
     
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        queryset = MapeoItemNovedades.objects.select_related(
-            'cliente', 'concepto_erp', 'mapeado_por'
-        ).all()
+        queryset = ConceptoNovedades.objects.select_related(
+            'cliente', 'erp', 'concepto_libro', 'mapeado_por'
+        ).filter(activo=True)
         
         cliente_id = self.request.query_params.get('cliente')
         if cliente_id:
             queryset = queryset.filter(cliente_id=cliente_id)
         
-        return queryset.order_by('nombre_novedades')
-    
-    def get_serializer_class(self):
-        if self.action == 'crear_batch':
-            return MapeoItemCrearSerializer
-        return MapeoItemNovedadesSerializer
+        erp_id = self.request.query_params.get('erp')
+        if erp_id:
+            queryset = queryset.filter(erp_id=erp_id)
+        
+        return queryset.order_by('orden', 'header_original')
     
     @action(detail=False, methods=['get'])
     def sin_mapear(self, request):
-        """Obtener items de novedades sin mapear para un cierre."""
-        cierre_id = request.query_params.get('cierre_id')
-        if not cierre_id:
-            return Response(
-                {'error': 'cierre_id es requerido'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        """
+        Obtener conceptos de novedades sin mapear para un cliente+ERP.
         
-        # Items en novedades que no tienen mapeo
-        from django.db.models import Count
-        
-        items_sin_mapear = RegistroNovedades.objects.filter(
-            cierre_id=cierre_id,
-            mapeo__isnull=True
-        ).values('nombre_item').annotate(
-            cantidad_registros=Count('id')
-        ).order_by('nombre_item')
-        
-        return Response({
-            'count': items_sin_mapear.count(),
-            'items': [
-                {
-                    'nombre_novedades': item['nombre_item'],
-                    'cantidad_registros': item['cantidad_registros']
-                }
-                for item in items_sin_mapear
-            ]
-        })
-    
-    @action(detail=False, methods=['post'])
-    def crear_batch(self, request):
-        """Crear múltiples mapeos a la vez."""
-        serializer = MapeoItemCrearSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        cliente_id = request.data.get('cliente_id')
+        Query params:
+            cliente_id: ID del cliente (requerido)
+            erp_id: ID del ERP (opcional, se infiere del cliente si no se da)
+        """
+        cliente_id = request.query_params.get('cliente_id')
         if not cliente_id:
             return Response(
                 {'error': 'cliente_id es requerido'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        creados = 0
-        errores = []
+        queryset = ConceptoNovedades.objects.filter(
+            cliente_id=cliente_id,
+            concepto_libro__isnull=True,
+            activo=True
+        ).order_by('orden')
         
-        for item in serializer.validated_data['mapeos']:
-            try:
-                MapeoItemNovedades.objects.create(
-                    cliente_id=cliente_id,
-                    nombre_novedades=item['nombre_novedades'],
-                    concepto_erp_id=item['concepto_erp_id'],
-                    mapeado_por=request.user
-                )
-                creados += 1
-            except Exception as e:
-                errores.append(f"Error en '{item['nombre_novedades']}': {str(e)}")
-        
-        # Actualizar mapeos en registros existentes
-        from ..models import Cierre
-        cierre_id = request.data.get('cierre_id')
-        if cierre_id:
-            try:
-                cierre = Cierre.objects.get(id=cierre_id)
-                for registro in RegistroNovedades.objects.filter(cierre=cierre, mapeo__isnull=True):
-                    mapeo = MapeoItemNovedades.objects.filter(
-                        cliente=cierre.cliente,
-                        nombre_novedades=registro.nombre_item
-                    ).first()
-                    if mapeo:
-                        registro.mapeo = mapeo
-                        registro.save()
-            except Exception as e:
-                errores.append(f"Error actualizando registros: {str(e)}")
+        erp_id = request.query_params.get('erp_id')
+        if erp_id:
+            queryset = queryset.filter(erp_id=erp_id)
         
         return Response({
-            'creados': creados,
-            'errores': errores
+            'count': queryset.count(),
+            'items': [
+                {
+                    'id': item.id,
+                    'header_original': item.header_original,
+                    'orden': item.orden,
+                }
+                for item in queryset
+            ]
+        })
+    
+    @action(detail=False, methods=['get'])
+    def conceptos_libro(self, request):
+        """
+        Obtener ConceptosLibro disponibles para mapear.
+        
+        Retorna solo conceptos clasificados (no ignorar) del cliente+ERP.
+        """
+        cliente_id = request.query_params.get('cliente_id')
+        erp_id = request.query_params.get('erp_id')
+        
+        if not cliente_id:
+            return Response(
+                {'error': 'cliente_id es requerido'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        queryset = ConceptoLibro.objects.filter(
+            cliente_id=cliente_id,
+            activo=True,
+            categoria__isnull=False
+        ).exclude(categoria='ignorar')
+        
+        if erp_id:
+            queryset = queryset.filter(erp_id=erp_id)
+        
+        conceptos = queryset.order_by('categoria', 'orden', 'header_original')
+        
+        return Response({
+            'count': conceptos.count(),
+            'conceptos': [
+                {
+                    'id': c.id,
+                    'header_original': c.header_original,
+                    'header_pandas': c.header_pandas,
+                    'categoria': c.categoria,
+                    'categoria_display': c.get_categoria_display(),
+                }
+                for c in conceptos
+            ]
+        })
+    
+    @action(detail=False, methods=['post'])
+    def mapear_batch(self, request):
+        """
+        Mapear múltiples ConceptoNovedades a ConceptoLibro.
+        
+        Espera:
+            mapeos: [
+                { concepto_novedades_id: 1, concepto_libro_id: 45 },
+                { concepto_novedades_id: 2, concepto_libro_id: 67 },
+            ]
+        
+        Actualiza ConceptoNovedades con el concepto_libro correspondiente.
+        """
+        mapeos_data = request.data.get('mapeos', [])
+        
+        if not mapeos_data:
+            return Response(
+                {'error': 'mapeos es requerido'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        mapeados = 0
+        errores = []
+        
+        for mapeo_data in mapeos_data:
+            concepto_novedades_id = mapeo_data.get('concepto_novedades_id')
+            concepto_libro_id = mapeo_data.get('concepto_libro_id')
+            
+            if not concepto_novedades_id or not concepto_libro_id:
+                errores.append(f"Datos incompletos: {mapeo_data}")
+                continue
+            
+            try:
+                concepto_novedades = ConceptoNovedades.objects.get(id=concepto_novedades_id)
+                concepto_libro = ConceptoLibro.objects.get(
+                    id=concepto_libro_id, 
+                    cliente=concepto_novedades.cliente
+                )
+                
+                concepto_novedades.concepto_libro = concepto_libro
+                concepto_novedades.mapeado_por = request.user
+                concepto_novedades.fecha_mapeo = timezone.now()
+                concepto_novedades.save()
+                mapeados += 1
+                
+            except ConceptoNovedades.DoesNotExist:
+                errores.append(f"ConceptoNovedades {concepto_novedades_id} no encontrado")
+            except ConceptoLibro.DoesNotExist:
+                errores.append(f"ConceptoLibro {concepto_libro_id} no encontrado")
+            except Exception as e:
+                errores.append(f"Error en concepto {concepto_novedades_id}: {str(e)}")
+        
+        # Obtener cliente_id del primer mapeo para verificar estado
+        if mapeos_data and mapeados > 0:
+            try:
+                primer_concepto = ConceptoNovedades.objects.get(
+                    id=mapeos_data[0].get('concepto_novedades_id')
+                )
+                cliente_id = primer_concepto.cliente_id
+                erp_id = primer_concepto.erp_id
+                
+                # Verificar si todos los conceptos están mapeados
+                sin_mapear = ConceptoNovedades.objects.filter(
+                    cliente_id=cliente_id,
+                    erp_id=erp_id,
+                    concepto_libro__isnull=True,
+                    activo=True
+                ).count()
+            except:
+                sin_mapear = -1
+        else:
+            sin_mapear = -1
+        
+        return Response({
+            'mapeados': mapeados,
+            'errores': errores,
+            'sin_mapear': sin_mapear,
         })
