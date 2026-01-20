@@ -80,7 +80,8 @@ const useConceptosLibro = (clienteId, erpId, options = {}) => {
  * @param {function} props.onClose - Callback al cerrar el modal
  * @param {Object} props.archivo - Objeto del archivo de novedades (ArchivoAnalista)
  * @param {string|number} props.cierreId - ID del cierre
- * @param {Object} props.cliente - Objeto del cliente con ID y ERP
+ * @param {Object} props.cliente - Objeto del cliente con ID
+ * @param {string|number} props.erpId - ID del ERP
  * @param {function} props.onMapeoComplete - Callback cuando se completa el mapeo
  */
 const MapeoNovedadesModal = ({ 
@@ -89,6 +90,7 @@ const MapeoNovedadesModal = ({
   archivo, 
   cierreId,
   cliente,
+  erpId,
   onMapeoComplete
 }) => {
   const queryClient = useQueryClient()
@@ -97,13 +99,13 @@ const MapeoNovedadesModal = ({
   // Queries para datos - usando cliente+ERP (no archivo)
   const { data: conceptosSinMapear, isLoading: loadingConceptos } = useConceptosNovedadesSinMapear(
     cliente?.id,
-    cliente?.erp_id,
+    erpId,
     { enabled: isOpen && !!cliente?.id }
   )
   
   const { data: conceptosLibro, isLoading: loadingLibro } = useConceptosLibro(
     cliente?.id,
-    cliente?.erp_id,
+    erpId,
     { enabled: isOpen && !!cliente?.id }
   )
   

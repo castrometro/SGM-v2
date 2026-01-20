@@ -2,233 +2,171 @@
 
 > Sistema de Gestión de Nómina: validación de cierres, comparación ERP vs archivos analista, gestión de incidencias.
 
+## Instrucciones Específicas por Contexto
+
+> Las siguientes instrucciones se aplican automáticamente según el archivo que estés editando:
+
+| Instrucción | Aplica a | Contenido |
+|-------------|----------|-----------|
+| [react-instructions.md](.github/instructions/react-instructions.md) | `frontend/**/*.jsx, *.js, *.css` | Componentes, Zustand, React Query, Error Boundaries |
+| [audit-compliance-instructions.md](.github/instructions/audit-compliance-instructions.md) | `backend/**/*.py` | ISO 27001, Ley 21.719, retención de datos |
+| [libro-processing-instructions.md](.github/instructions/libro-processing-instructions.md) | Procesamiento de nómina | Arquitectura Medallion (Bronce→Plata→Oro) |
+
 ## Arquitectura
 
-- **Backend**: Django 5 + DRF + Celery/Redis (tareas async) + PostgreSQL | JWT auth
+- **Backend**: Django 5 + DRF + Celery/Redis + PostgreSQL | JWT auth
 - **Frontend**: React 18 + Vite + Zustand + TanStack Query + Tailwind CSS
-- **Infra**: Docker Compose (ver `docker-compose.yml`)
+- **Infra**: `docker compose up -d` levanta todo (db, redis, backend, celery, frontend)
 
 ```
 backend/apps/
-├── core/           # Usuarios, Clientes, Servicios
+├── core/           # Usuarios, Clientes, Servicios, AuditLog
 ├── validador/      # Cierres, Archivos, Discrepancias, Incidencias (lógica principal)
 └── reporteria/     # Dashboards y reportes
 
 frontend/src/
 ├── features/       # Módulos por dominio (validador/, auth/, dashboard/)
-├── stores/         # Zustand (authStore.js)
-├── hooks/          # usePermissions.js, custom hooks
-└── constants/      # Espejo de constantes backend
+├── stores/         # Zustand (authStore.js) - persistencia tokens
+├── hooks/          # usePermissions.js - permisos calculados por backend
+└── constants/      # SINCRONIZADO con backend (TipoUsuario, EstadoCierre, etc.)
 ```
 
 ## Patrones Críticos
 
-### 1. Service Layer (Backend)
-**NO poner lógica de negocio en views**. Usar servicios en `apps/validador/services/`:
+### 1. Service Layer (Backend) - **OBLIGATORIO**
+**NO poner lógica de negocio en views**. Usar servicios que retornan `ServiceResult`:
 
 ```python
-from apps.validador.services import CierreService, ServiceResult
+from apps.validador.services import CierreService
+from apps.validador.constants import EstadoCierre
 
-result = CierreService.cambiar_estado(cierre, 'consolidado', user)
+result = CierreService.cambiar_estado(cierre, EstadoCierre.CONSOLIDADO, user)
 if result.success:
     return Response(CierreSerializer(result.data).data)
 return Response({'error': result.error}, status=400)
 ```
 
-Servicios disponibles: `CierreService`, `ArchivoService`, `IncidenciaService`, `EquipoService`
+Servicios: `CierreService`, `ArchivoService`, `IncidenciaService`, `EquipoService`, `LibroService`
 
-### 2. Constantes Centralizadas
-**NO usar magic strings**. Backend y frontend sincronizados:
-
+### 2. Constantes Centralizadas - **NO magic strings**
 ```python
 # Backend: apps/core/constants.py, apps/validador/constants.py
 from apps.core.constants import TipoUsuario
 from apps.validador.constants import EstadoCierre
 
-if user.tipo_usuario in TipoUsuario.PUEDEN_APROBAR:
+if user.tipo_usuario in TipoUsuario.PUEDEN_APROBAR:  # ['supervisor', 'gerente']
 if cierre.estado == EstadoCierre.CONSOLIDADO:
 ```
-
 ```javascript
-// Frontend: src/constants/index.js
+// Frontend: src/constants/index.js (espejo exacto del backend)
 import { TIPO_USUARIO, ESTADO_CIERRE, PUEDEN_APROBAR } from '@/constants'
 ```
 
-### 3. Autenticación Frontend
-**En componentes React**: usar `useAuth()` (AuthContext)
-**En axios interceptors**: usar `useAuthStore.getState()` (ver `src/api/axios.js`)
-**Para permisos**: usar `usePermissions()` - consume permisos calculados por backend
+### 3. Autenticación Frontend - Context vs Store
+- **Componentes React**: `useAuth()` de AuthContext
+- **Axios interceptors**: `useAuthStore.getState()` (fuera de React)
+- **Permisos**: `usePermissions()` - consume permisos del endpoint `/api/v1/core/me/`
 
-```javascript
-const { user, isAuthenticated, login, logout } = useAuth()
-const { canApproveIncidencia, canManageUsers } = usePermissions()
-```
-
-### 4. Permisos Backend
-Los permisos se calculan en backend y se envían en `/api/v1/core/me/`. Usar clases de `shared/permissions.py`:
-
+### 4. Permisos - Backend es la fuente de verdad
+Roles con herencia: `analista` < `supervisor` < `gerente`
 ```python
 from shared.permissions import IsSupervisor, IsGerente, CanAccessCliente
 ```
 
-Roles: `analista` < `supervisor` < `gerente` (herencia de permisos)
-
-### 5. Queries Optimizadas
-**NO hacer N+1**. Siempre usar `select_related`/`prefetch_related`:
-
+### 5. Queries Optimizadas - **Siempre select_related/prefetch_related**
 ```python
 Cierre.objects.select_related('cliente', 'analista').filter(...)
 ```
 
-## Flujo de Cierre
-
-### Estados del Cierre
-
-| # | Estado | Descripción | Acción requerida |
-|---|--------|-------------|------------------|
-| 1 | `CARGA_ARCHIVOS` | Hub de trabajo principal | Subir archivos, clasificar, mapear |
-| 2 | `CON_DISCREPANCIAS` | Existen diferencias ERP vs Cliente | Resolver discrepancias |
-| 3 | `SIN_DISCREPANCIAS` | 0 discrepancias (inicial o resueltas) | Click manual para consolidar |
-| 4 | `CONSOLIDADO` | Datos validados y confirmados | Detectar incidencias |
-| 5 | `CON_INCIDENCIAS` | Hay incidencias detectadas | Resolver incidencias |
-| 6 | `SIN_INCIDENCIAS` | No hay incidencias | Finalizar |
-| 7 | `FINALIZADO` | Proceso completo | - |
-
-### Diagrama de Flujo
-
-```
-                    ┌─────────────────────────────────────────────────────────┐
-                    │                    CARGA_ARCHIVOS                       │
-                    │  ┌─────────────┐ ┌─────────────┐ ┌─────────────────┐   │
-                    │  │ Libro ERP   │ │ Clasificar  │ │ Novedades       │   │
-                    │  │ [Subir]     │ │ [Conceptos] │ │ [Subir]         │   │
-                    │  └─────────────┘ └─────────────┘ └─────────────────┘   │
-                    │  ┌─────────────────────────────────────────────────┐   │
-                    │  │ Mapeo Novedades [Mapear headers → conceptos]    │   │
-                    │  └─────────────────────────────────────────────────┘   │
-                    │           [🚀 Generar Comparación] ← Todo listo        │
-                    └─────────────────────────┬───────────────────────────────┘
-                                              │
-                        ┌─────────────────────┴─────────────────────┐
-                        ▼                                           ▼
-               ┌─────────────────┐                        ┌─────────────────┐
-               │ CON_DISCREPANCIAS│◄──────────────────────│SIN_DISCREPANCIAS│
-               │ (resolver)       │                        │ (click manual)  │
-               └────────┬────────┘                        └────────┬────────┘
-                        │ ◄── Puede volver a CARGA_ARCHIVOS        │
-                        │     si necesita corregir archivos        │
-                        └──────────────────┬───────────────────────┘
-                                           ▼
-                                  ┌─────────────────┐
-                                  │   CONSOLIDADO   │
-                                  │ (datos válidos) │
-                                  └────────┬────────┘
-                                           │ [Detectar Incidencias] (manual)
-                        ┌──────────────────┴──────────────────┐
-                        ▼                                      ▼
-               ┌─────────────────┐                    ┌─────────────────┐
-               │ CON_INCIDENCIAS │                    │ SIN_INCIDENCIAS │
-               │ (resolver)      │                    │                 │
-               └────────┬────────┘                    └────────┬────────┘
-                        │                                      │
-                        └──────────────────┬───────────────────┘
-                                           ▼
-                                  ┌─────────────────┐
-                                  │   FINALIZADO    │
-                                  └─────────────────┘
+### 6. ERP Factory/Strategy Pattern
+Para parsear archivos de diferentes ERPs (Talana, SAP, Buk):
+```python
+from apps.validador.services.erp import ERPFactory
+strategy = ERPFactory.get_strategy('talana')  # Auto-registrados con decorador
+result = strategy.parse_archivo(file, 'libro_remuneraciones')
 ```
 
-### Reglas Importantes
+## Arquitectura de Datos: Medallion
 
-1. **CARGA_ARCHIVOS es el "Hub"**: Una sola vista con todas las tarjetas. El usuario puede:
-   - Subir/eliminar libro ERP
-   - Clasificar conceptos del libro
-   - Subir/eliminar novedades del cliente
-   - Mapear headers de novedades → conceptos del libro
+El procesamiento del libro de remuneraciones sigue arquitectura medallion:
+- **Bronce**: `RegistroLibro`, `RegistroNovedades` - datos crudos extraídos
+- **Plata**: Después de comparar y resolver discrepancias
+- **Oro**: Consolidado con totales para reportería
 
-2. **Botón "Generar Comparación"**: Solo se habilita cuando:
-   - ✅ Libro ERP procesado
-   - ✅ Todos los conceptos clasificados
-   - ✅ Novedades procesadas
-   - ✅ Todos los headers mapeados
+Ver detalles en [libro-processing-instructions.md](.github/instructions/libro-processing-instructions.md)
 
-3. **SIN_DISCREPANCIAS requiere acción manual**: El analista debe hacer click explícito para pasar a CONSOLIDADO. Nunca automático.
-
-4. **Se puede retroceder**: Desde CON_DISCREPANCIAS se puede volver a CARGA_ARCHIVOS para corregir archivos.
-
-5. **Detección de incidencias es manual**: El paso de CONSOLIDADO a CON/SIN_INCIDENCIAS requiere acción del usuario.
-
-Estados definidos en `EstadoCierre.CHOICES`. Ver `apps/validador/constants.py` para grupos de estados.
-
-## Tareas Celery
-
-<!-- TODO: Documentar tareas async disponibles -->
-
-Tareas en `apps/validador/tasks/`:
-- `procesar_erp.py` - Procesamiento de archivos ERP
-- `procesar_analista.py` - Procesamiento de archivos del analista
-- `comparacion.py` - Comparación ERP vs Analista
-
-## Comandos
-
-```bash
-docker compose up -d                    # Levantar todo
-docker compose logs -f backend          # Logs backend
-docker compose exec backend python manage.py shell
-docker compose exec backend python manage.py makemigrations
-cd frontend && npm run dev              # Frontend dev server
-```
-
-## Endpoints Principales
+## Flujo de Cierre (7 estados)
 
 ```
-POST /api/auth/token/              - Login (JWT)
-GET  /api/v1/core/me/              - Usuario + permisos
-GET  /api/v1/core/audit-logs/      - Logs de auditoría (solo gerentes)
-GET  /api/v1/validador/cierres/    - Lista cierres
-GET  /api/v1/validador/cierres/{id}/resumen/  - Resumen cierre
-POST /api/v1/validador/archivos-erp/          - Subir archivo ERP
-POST /api/v1/validador/incidencias/{id}/resolver/  - Resolver incidencia
+CARGA_ARCHIVOS → [Generar Comparación] → CON/SIN_DISCREPANCIAS
+                                                ↓ (click manual)
+                                          CONSOLIDADO
+                                                ↓ (detectar manual)
+                                      CON/SIN_INCIDENCIAS → FINALIZADO
 ```
 
-## Auditoría
+**Reglas clave:**
+- `CARGA_ARCHIVOS`: Hub único donde se suben archivos ERP, novedades, se clasifican conceptos y mapean headers
+- `SIN_DISCREPANCIAS`: Requiere click **manual** para consolidar (nunca automático)
+- Desde `CON_DISCREPANCIAS` se puede **retroceder** a `CARGA_ARCHIVOS`
+- Grupos de estados en `EstadoCierre.ESTADOS_ACTIVOS`, `ESTADOS_PUEDEN_RETROCEDER`, etc.
 
-Para cumplimiento ISO 27001 y Ley 21.719, usar funciones de `shared/audit.py`:
+## Tareas Celery (`apps/validador/tasks/`)
+
+- `procesar_archivo_erp` - Procesa libro de remuneraciones
+- `procesar_archivo_analista`, `extraer_headers_novedades` - Archivos del cliente
+- `ejecutar_comparacion` - Compara ERP vs Novedades
+- `detectar_incidencias`, `generar_consolidacion` - Post-comparación
+
+## Auditoría (ISO 27001 / Ley 21.719)
 
 ```python
-from shared.audit import audit_create, audit_update, audit_delete, modelo_a_dict
+from shared.audit import audit_create, audit_update, modelo_a_dict
 
-# En perform_create
 def perform_create(self, serializer):
     instancia = serializer.save()
     audit_create(self.request, instancia)
 
-# En perform_update
 def perform_update(self, serializer):
     datos_ant = modelo_a_dict(serializer.instance)  # ANTES del save
     instancia = serializer.save()
     audit_update(self.request, instancia, datos_ant)
 ```
 
-Ver [docs/backend/AUDIT_SYSTEM.md](docs/backend/AUDIT_SYSTEM.md) para documentación completa.
+Ver [audit-compliance-instructions.md](.github/instructions/audit-compliance-instructions.md) para política de retención y cumplimiento normativo.
+
+## Comandos Útiles
+
+```bash
+docker compose up -d                              # Levantar todo
+docker compose logs -f backend celery_worker     # Logs backend + celery
+docker compose exec backend python manage.py shell
+docker compose exec backend python manage.py makemigrations
+cd frontend && npm run dev                        # Frontend dev (puerto 5173)
+```
+
+## Endpoints Principales
+
+```
+POST /api/auth/token/                    - Login JWT
+GET  /api/v1/core/me/                    - Usuario + permisos calculados
+GET  /api/v1/validador/cierres/          - Lista cierres
+POST /api/v1/validador/archivos-erp/     - Subir archivo ERP
+POST /api/v1/validador/incidencias/{id}/resolver/
+```
 
 ## Convenciones
 
-- **Python**: snake_case (variables), PascalCase (clases)
-- **JavaScript**: camelCase (variables), PascalCase (componentes .jsx)
+- **Python**: snake_case, PascalCase clases, `models/` como paquete con `help_text`
+- **JavaScript**: camelCase, PascalCase componentes `.jsx`
 - **Commits**: conventional commits (`feat:`, `fix:`, `refactor:`)
-- **Modelos**: usar `models/` como paquete, documentar con `help_text`
 - **Features frontend**: estructura `components/`, `hooks/`, `pages/`, `index.js`
 
-## Archivos Clave
+## Archivos de Referencia
 
-- [backend/apps/validador/services/__init__.py](backend/apps/validador/services/__init__.py) - Service Layer exports
+- [backend/apps/validador/services/__init__.py](backend/apps/validador/services/__init__.py) - Todos los servicios
+- [backend/apps/validador/constants.py](backend/apps/validador/constants.py) - EstadoCierre, grupos de estados
 - [backend/shared/permissions.py](backend/shared/permissions.py) - Clases de permisos DRF
-- [backend/shared/audit.py](backend/shared/audit.py) - Funciones de auditoría
-- [frontend/src/constants/index.js](frontend/src/constants/index.js) - Constantes frontend
-- [frontend/src/hooks/usePermissions.js](frontend/src/hooks/usePermissions.js) - Hook de permisos
-- [frontend/src/contexts/AuthContext.jsx](frontend/src/contexts/AuthContext.jsx) - Auth provider
-- [docs/backend/SERVICE_LAYER.md](docs/backend/SERVICE_LAYER.md) - Guía detallada del Service Layer
-- [docs/backend/FLUJO_CIERRE.md](docs/backend/FLUJO_CIERRE.md) - Flujo de estados del cierre
-- [docs/backend/AUDIT_SYSTEM.md](docs/backend/AUDIT_SYSTEM.md) - Sistema de auditoría
-- [docs/backend/NOVEDADES.md](docs/backend/NOVEDADES.md) - Archivo de novedades del cliente
+- [frontend/src/constants/index.js](frontend/src/constants/index.js) - Espejo de constantes
+- [docs/backend/SERVICE_LAYER.md](docs/backend/SERVICE_LAYER.md) - Guía Service Layer
+- [docs/backend/FLUJO_CIERRE.md](docs/backend/FLUJO_CIERRE.md) - Diagrama completo de estados

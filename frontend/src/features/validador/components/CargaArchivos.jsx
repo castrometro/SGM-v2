@@ -2,22 +2,16 @@
  * Componente Hub de Carga de Archivos para el Validador de Nómina
  * 
  * Este es el componente principal del estado CARGA_ARCHIVOS.
- * Integra todas las tareas de preparación en una sola vista:
- * 
- * 1. Libro ERP: Subir y procesar archivo del sistema de nómina
- * 2. Clasificación: Clasificar conceptos del libro
- * 3. Novedades: Subir archivo de novedades del cliente
- * 4. Mapeo: Mapear headers de novedades → conceptos del libro
- * 
- * El botón "Generar Comparación" solo se habilita cuando todo está listo.
+ * Muestra las dos secciones de archivos:
+ * - Archivos del ERP (Libro de Remuneraciones, Movimientos)
+ * - Archivos del Cliente (Novedades, Ingresos, Finiquitos, etc.)
  */
-import { useState, useCallback, useRef, useMemo } from 'react'
-import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query'
+import { useState, useCallback, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { 
   Upload, 
   File, 
   FileSpreadsheet, 
-  X, 
   Check, 
   AlertCircle, 
   Loader2, 
@@ -25,19 +19,14 @@ import {
   RefreshCw,
   FileCheck,
   Database,
-  Users,
   Settings,
   Tag,
-  Link2,
-  Rocket,
-  ChevronRight,
-  CheckCircle2
+  Link2
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui'
 import Badge from '../../../components/ui/Badge'
 import Button from '../../../components/ui/Button'
 import { cn } from '../../../utils/cn'
-import api from '../../../api/axios'
 import {
   useArchivosERP,
   useArchivosAnalista,
@@ -53,13 +42,14 @@ import ClasificacionLibroModal from './ClasificacionLibroModal'
 import MapeoNovedadesModal from './MapeoNovedadesModal'
 import { 
   TIPO_ARCHIVO_ERP, 
+  TIPO_ARCHIVO_ANALISTA,
   ESTADO_ARCHIVO,
   ESTADO_ARCHIVO_LIBRO,
   ESTADO_ARCHIVO_NOVEDADES,
   libroRequiereAccion,
   puedeClasificarLibro,
-  puedeMapearNovedades,
-  POLLING_INTERVALS
+  novedadesRequiereAccion,
+  puedeMapearNovedades
 } from '../../../constants'
 
 // Constantes para estados de archivo
@@ -175,14 +165,15 @@ const ProgresoProcesamientoLibro = ({ archivoId }) => {
 /**
  * Componente de zona de drop para un tipo de archivo específico
  */
-const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUploading, progress, categoria, onClasificar }) => {
+const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUploading, progress, categoria, onClasificar, disabled, disabledMessage }) => {
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef(null)
 
   const handleDragOver = useCallback((e) => {
+    if (disabled) return
     e.preventDefault()
     setIsDragging(true)
-  }, [])
+  }, [disabled])
 
   const handleDragLeave = useCallback((e) => {
     e.preventDefault()
@@ -192,6 +183,8 @@ const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUpl
   const handleDrop = useCallback((e) => {
     e.preventDefault()
     setIsDragging(false)
+    
+    if (disabled) return
     
     const files = e.dataTransfer.files
     if (files.length > 0) {
@@ -203,7 +196,7 @@ const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUpl
         alert(`Formato no permitido. Use: ${FORMATOS_PERMITIDOS.join(', ')}`)
       }
     }
-  }, [onUpload])
+  }, [onUpload, disabled])
 
   const handleFileSelect = useCallback((e) => {
     const file = e.target.files[0]
@@ -215,7 +208,7 @@ const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUpl
   }, [onUpload])
 
   const handleClick = () => {
-    if (!isUploading && !archivo) {
+    if (!isUploading && !archivo && !disabled) {
       fileInputRef.current?.click()
     }
   }
@@ -287,6 +280,23 @@ const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUpl
                   title="Clasificar conceptos"
                 >
                   <Settings className="h-4 w-4" />
+                </button>
+              )}
+              {/* Botón de mapeo para Novedades */}
+              {tipo === TIPO_ARCHIVO_ANALISTA.NOVEDADES && 
+               puedeMapearNovedades(archivo.estado) && 
+               onClasificar && (
+                <button
+                  onClick={() => onClasificar(archivo)}
+                  className={cn(
+                    "p-1.5 rounded-lg transition-colors flex items-center gap-1",
+                    novedadesRequiereAccion(archivo.estado)
+                      ? "text-warning-400 hover:text-warning-300 hover:bg-warning-500/20 animate-pulse"
+                      : "text-secondary-400 hover:text-primary-400 hover:bg-secondary-700"
+                  )}
+                  title="Mapear conceptos"
+                >
+                  <Link2 className="h-4 w-4" />
                 </button>
               )}
               {/* Solo mostrar icono spinner si NO es libro (libro tiene su propio componente de progreso) */}
@@ -363,6 +373,46 @@ const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUpl
               </div>
             </div>
           )}
+          
+          {/* Alerta de mapeo requerido para Novedades */}
+          {tipo === TIPO_ARCHIVO_ANALISTA.NOVEDADES && novedadesRequiereAccion(archivo.estado) && (
+            <div className="mt-2 p-2 bg-warning-500/10 border border-warning-500/30 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Link2 className="h-4 w-4 text-warning-400 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm text-warning-300 font-medium">
+                    Mapeo de conceptos pendiente
+                  </p>
+                  <p className="text-xs text-secondary-400">
+                    Mapea los conceptos de novedades al libro
+                  </p>
+                </div>
+                {onClasificar && (
+                  <Button
+                    size="sm"
+                    variant="warning"
+                    onClick={() => onClasificar(archivo)}
+                    className="flex items-center gap-1"
+                  >
+                    <Link2 className="h-3 w-3" />
+                    Mapear
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* Indicador de novedades listo */}
+          {tipo === TIPO_ARCHIVO_ANALISTA.NOVEDADES && archivo.estado === ESTADO_ARCHIVO_NOVEDADES.LISTO && (
+            <div className="mt-2 p-2 bg-success-500/10 border border-success-500/30 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Check className="h-4 w-4 text-success-400" />
+                <p className="text-sm text-success-300">
+                  Conceptos mapeados. Listo para procesar.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         /* Zona de drop */
@@ -372,13 +422,21 @@ const DropZone = ({ tipo, label, descripcion, archivo, onUpload, onDelete, isUpl
           onDrop={handleDrop}
           onClick={handleClick}
           className={cn(
-            "relative flex flex-col items-center justify-center p-6 rounded-lg border-2 border-dashed cursor-pointer transition-all",
-            isDragging && "border-primary-500 bg-primary-500/10",
-            !isDragging && !isUploading && "border-secondary-700 hover:border-secondary-500 hover:bg-secondary-800/50",
-            isUploading && "border-primary-500 bg-primary-500/5 cursor-not-allowed",
+            "relative flex flex-col items-center justify-center p-6 rounded-lg border-2 border-dashed transition-all",
+            disabled && "cursor-not-allowed opacity-50 border-secondary-700 bg-secondary-900/30",
+            !disabled && isDragging && "border-primary-500 bg-primary-500/10 cursor-pointer",
+            !disabled && !isDragging && !isUploading && "border-secondary-700 hover:border-secondary-500 hover:bg-secondary-800/50 cursor-pointer",
+            !disabled && isUploading && "border-primary-500 bg-primary-500/5 cursor-not-allowed",
           )}
         >
-          {isUploading ? (
+          {disabled ? (
+            <div className="flex flex-col items-center gap-2">
+              <Upload className="h-8 w-8 text-secondary-600" />
+              <p className="text-sm text-secondary-500 text-center">
+                {disabledMessage || 'No disponible'}
+              </p>
+            </div>
+          ) : isUploading ? (
             <div className="flex flex-col items-center gap-2 w-full">
               <Loader2 className="h-8 w-8 text-primary-400 animate-spin" />
               <p className="text-sm text-secondary-300">Subiendo archivo...</p>
@@ -469,51 +527,11 @@ const CargaArchivos = ({ cierreId, cierre, onUpdate }) => {
   const [clasificacionModalOpen, setClasificacionModalOpen] = useState(false)
   const [archivoParaClasificar, setArchivoParaClasificar] = useState(null)
   const [mapeoModalOpen, setMapeoModalOpen] = useState(false)
+  const [archivoParaMapeo, setArchivoParaMapeo] = useState(null)
 
   // Queries para obtener archivos existentes
   const { data: archivosERP, isLoading: loadingERP, refetch: refetchERP } = useArchivosERP(cierreId)
   const { data: archivosAnalista, isLoading: loadingAnalista, refetch: refetchAnalista } = useArchivosAnalista(cierreId)
-
-  // Query para obtener estado de clasificación de conceptos
-  const { data: estadoClasificacion, refetch: refetchClasificacion } = useQuery({
-    queryKey: ['conceptos-clasificacion', cierre?.cliente],
-    queryFn: async () => {
-      if (!cierre?.cliente) return null
-      const { data } = await api.get(`/v1/validador/conceptos-libro/`, {
-        params: { cliente_id: cierre.cliente }
-      })
-      const sinClasificar = data.filter(c => !c.categoria).length
-      const total = data.length
-      return { total, clasificados: total - sinClasificar, sinClasificar }
-    },
-    enabled: !!cierre?.cliente,
-  })
-
-  // Query para obtener estado de mapeo de novedades
-  const { data: estadoMapeo, refetch: refetchMapeo } = useQuery({
-    queryKey: ['conceptos-novedades-mapeo', cierre?.cliente, cierre?.cliente_erp?.id],
-    queryFn: async () => {
-      if (!cierre?.cliente) return null
-      const { data } = await api.get(`/v1/validador/mapeos/sin_mapear/`, {
-        params: { 
-          cliente_id: cierre.cliente,
-          erp_id: cierre.cliente_erp?.id 
-        }
-      })
-      // Sin mapear
-      const sinMapear = data.count || data.items?.length || 0
-      // Obtener total de conceptos novedades
-      const { data: total } = await api.get(`/v1/validador/conceptos-novedades/`, {
-        params: { 
-          cliente_id: cierre.cliente,
-          erp_id: cierre.cliente_erp?.id
-        }
-      })
-      const totalConceptos = total.length || 0
-      return { total: totalConceptos, mapeados: totalConceptos - sinMapear, sinMapear }
-    },
-    enabled: !!cierre?.cliente && !!archivosAnalista?.novedades,
-  })
 
   // Mutations
   const uploadERP = useUploadArchivoERP()
@@ -521,38 +539,8 @@ const CargaArchivos = ({ cierreId, cierre, onUpdate }) => {
   const deleteERP = useDeleteArchivoERP()
   const deleteAnalista = useDeleteArchivoAnalista()
 
-  // Mutation para generar comparación
-  const generarComparacion = useMutation({
-    mutationFn: async () => {
-      const { data } = await api.post(`/v1/validador/cierres/${cierreId}/generar-comparacion/`)
-      return data
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries(['cierre', cierreId])
-      onUpdate?.()
-    },
-  })
-
   // Archivos específicos
   const libroERP = archivosERP?.libro_remuneraciones
-  const archivoNovedades = archivosAnalista?.novedades
-
-  // Calcular si se puede generar comparación
-  const puedeGenerarComparacion = useMemo(() => {
-    // 1. Libro ERP debe estar procesado
-    const libroOk = libroERP?.estado === ESTADO_ARCHIVO_LIBRO.PROCESADO
-    
-    // 2. Todos los conceptos deben estar clasificados
-    const clasificacionOk = estadoClasificacion?.sinClasificar === 0 && estadoClasificacion?.total > 0
-    
-    // 3. Novedades debe estar procesado
-    const novedadesOk = archivoNovedades?.estado === ESTADO_ARCHIVO_NOVEDADES.PROCESADO
-    
-    // 4. Todos los headers deben estar mapeados
-    const mapeoOk = estadoMapeo?.sinMapear === 0 && estadoMapeo?.total > 0
-    
-    return libroOk && clasificacionOk && novedadesOk && mapeoOk
-  }, [libroERP, estadoClasificacion, archivoNovedades, estadoMapeo])
 
   // Handlers para modales
   const handleOpenClasificacion = useCallback((archivo) => {
@@ -564,18 +552,18 @@ const CargaArchivos = ({ cierreId, cierre, onUpdate }) => {
     setClasificacionModalOpen(false)
     setArchivoParaClasificar(null)
     refetchERP()
-    refetchClasificacion()
-  }, [refetchERP, refetchClasificacion])
+  }, [refetchERP])
 
-  const handleOpenMapeo = useCallback(() => {
+  const handleOpenMapeo = useCallback((archivo) => {
+    setArchivoParaMapeo(archivo)
     setMapeoModalOpen(true)
   }, [])
 
   const handleCloseMapeo = useCallback(() => {
     setMapeoModalOpen(false)
-    refetchMapeo()
+    setArchivoParaMapeo(null)
     refetchAnalista()
-  }, [refetchMapeo, refetchAnalista])
+  }, [refetchAnalista])
 
   // Handlers para archivos ERP
   const handleUploadERP = useCallback((tipo, archivo) => {
@@ -631,13 +619,6 @@ const CargaArchivos = ({ cierreId, cierre, onUpdate }) => {
     }
   }, [cierreId, deleteAnalista])
 
-  // Handler para generar comparación
-  const handleGenerarComparacion = useCallback(() => {
-    if (puedeGenerarComparacion) {
-      generarComparacion.mutate()
-    }
-  }, [puedeGenerarComparacion, generarComparacion])
-
   const isLoading = loadingERP || loadingAnalista
 
   if (isLoading) {
@@ -648,11 +629,8 @@ const CargaArchivos = ({ cierreId, cierre, onUpdate }) => {
     )
   }
 
-  // Estado de cada tarjeta para el checklist
+  // Libro procesado para habilitar novedades
   const libroOk = libroERP?.estado === ESTADO_ARCHIVO_LIBRO.PROCESADO
-  const clasificacionOk = estadoClasificacion?.sinClasificar === 0 && estadoClasificacion?.total > 0
-  const novedadesOk = archivoNovedades?.estado === ESTADO_ARCHIVO_NOVEDADES.PROCESADO
-  const mapeoOk = estadoMapeo?.sinMapear === 0 && estadoMapeo?.total > 0
 
   // Calcular progreso total
   const totalERP = TIPOS_ERP.length
@@ -764,53 +742,13 @@ const CargaArchivos = ({ cierreId, cierre, onUpdate }) => {
                 progress={progressAnalista[tipo.value] || 0}
                 categoria="analista"
                 onClasificar={tipo.value === 'novedades' ? handleOpenMapeo : undefined}
+                disabled={tipo.value === 'novedades' && !libroOk}
+                disabledMessage="Primero procesa el Libro de Remuneraciones"
               />
             ))}
           </CardContent>
         </Card>
       </div>
-
-      {/* Checklist y Botón de Comparación */}
-      <Card className="border-2 border-primary-500/30">
-        <CardContent className="py-6">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            {/* Checklist */}
-            <div className="flex flex-wrap items-center gap-4 sm:gap-6">
-              <ChecklistItem label="Libro ERP" checked={libroOk} />
-              <ChecklistItem label="Clasificación" checked={clasificacionOk} />
-              <ChecklistItem label="Novedades" checked={novedadesOk} />
-              <ChecklistItem label="Mapeo" checked={mapeoOk} />
-            </div>
-            
-            {/* Botón */}
-            <Button
-              size="lg"
-              variant={puedeGenerarComparacion ? "primary" : "secondary"}
-              disabled={!puedeGenerarComparacion || generarComparacion.isPending}
-              onClick={handleGenerarComparacion}
-              className="min-w-[200px]"
-            >
-              {generarComparacion.isPending ? (
-                <>
-                  <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                  Generando...
-                </>
-              ) : (
-                <>
-                  <Rocket className="h-5 w-5 mr-2" />
-                  Generar Comparación
-                </>
-              )}
-            </Button>
-          </div>
-          
-          {!puedeGenerarComparacion && (
-            <p className="text-sm text-secondary-400 mt-4 text-center">
-              Completa todos los pasos para habilitar la comparación
-            </p>
-          )}
-        </CardContent>
-      </Card>
 
       {/* Instrucciones */}
       <Card className="bg-secondary-800/30">
@@ -821,9 +759,8 @@ const CargaArchivos = ({ cierreId, cierre, onUpdate }) => {
               <p className="font-medium text-secondary-200 mb-1">Instrucciones:</p>
               <ul className="list-disc list-inside space-y-1 text-secondary-400">
                 <li>Los archivos deben estar en formato Excel (.xlsx, .xls) o CSV (.csv)</li>
-                <li>El <strong>Libro de Remuneraciones</strong> y <strong>Novedades</strong> son obligatorios para la comparación</li>
-                <li>Clasifica los conceptos del Libro antes de poder procesar</li>
-                <li>Mapea los headers de Novedades a los conceptos del Libro</li>
+                <li>Puedes reemplazar un archivo subiendo una nueva versión</li>
+                <li>El <strong>Libro de Remuneraciones</strong> debe estar procesado para subir Novedades</li>
               </ul>
             </div>
           </div>
@@ -838,7 +775,6 @@ const CargaArchivos = ({ cierreId, cierre, onUpdate }) => {
         cierreId={cierreId}
         onClasificacionComplete={() => {
           refetchERP()
-          refetchClasificacion()
         }}
         onProcesoIniciado={() => {
           refetchERP()
@@ -849,9 +785,13 @@ const CargaArchivos = ({ cierreId, cierre, onUpdate }) => {
       <MapeoNovedadesModal
         isOpen={mapeoModalOpen}
         onClose={handleCloseMapeo}
+        archivo={archivoParaMapeo}
         cierreId={cierreId}
         cliente={cierre?.cliente}
         erpId={cierre?.cliente_erp?.id}
+        onMapeoComplete={() => {
+          refetchAnalista()
+        }}
       />
     </div>
   )
@@ -860,21 +800,4 @@ const CargaArchivos = ({ cierreId, cierre, onUpdate }) => {
 /**
  * Item del checklist
  */
-const ChecklistItem = ({ label, checked }) => (
-  <div className="flex items-center gap-2">
-    <div className={cn(
-      "w-5 h-5 rounded-full flex items-center justify-center",
-      checked ? "bg-green-500" : "bg-secondary-700"
-    )}>
-      {checked && <Check className="h-3 w-3 text-white" />}
-    </div>
-    <span className={cn(
-      "text-sm",
-      checked ? "text-green-400" : "text-secondary-400"
-    )}>
-      {label}
-    </span>
-  </div>
-)
-
 export default CargaArchivos
