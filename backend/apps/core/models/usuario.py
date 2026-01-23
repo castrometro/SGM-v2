@@ -172,7 +172,7 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     
     def get_clientes_asignados(self):
         """Obtiene los clientes asignados directamente a este usuario."""
-        return [asig.cliente for asig in self.asignaciones.select_related('cliente').all()]
+        return list(self.clientes_asignados.filter(activo=True))
     
     def get_analistas_a_cargo(self):
         """
@@ -194,14 +194,12 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
         if not self.es_supervisor_o_superior:
             return []
         
-        from .asignacion import AsignacionClienteUsuario
+        from .cliente import Cliente
         analistas_ids = self.analistas_supervisados.values_list('id', flat=True)
         return list(
-            set(
-                asig.cliente 
-                for asig in AsignacionClienteUsuario.objects
-                    .filter(usuario_id__in=analistas_ids, activo=True)
-                    .select_related('cliente')
+            Cliente.objects.filter(
+                usuario_asignado_id__in=analistas_ids,
+                activo=True
             )
         )
     

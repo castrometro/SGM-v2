@@ -787,7 +787,7 @@ const CargaArchivos = ({ cierreId, cierre, onUpdate }) => {
         onClose={handleCloseMapeo}
         archivo={archivoParaMapeo}
         cierreId={cierreId}
-        cliente={cierre?.cliente}
+        clienteId={cierre?.cliente}
         erpId={cierre?.cliente_erp?.id}
         onMapeoComplete={() => {
           refetchAnalista()

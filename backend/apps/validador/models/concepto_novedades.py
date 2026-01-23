@@ -58,6 +58,12 @@ class ConceptoNovedades(models.Model):
         help_text='Concepto del libro al que mapea (null = sin mapear)'
     )
     
+    # Flag para items que no tienen equivalente en el libro
+    sin_asignacion = models.BooleanField(
+        default=False,
+        help_text='True = este item no tiene equivalente en el libro y se ignorará en comparación'
+    )
+    
     orden = models.PositiveIntegerField(
         default=0,
         help_text='Orden en que aparece la columna en el Excel'
@@ -101,6 +107,14 @@ class ConceptoNovedades(models.Model):
             models.Index(fields=['cliente', 'erp', 'header_normalizado']),
             models.Index(fields=['concepto_libro']),
         ]
+        constraints = [
+            # Debe tener concepto_libro O sin_asignacion=True (o ninguno si está pendiente)
+            # Esta constraint se aplica solo cuando mapeado=True
+            models.CheckConstraint(
+                check=models.Q(concepto_libro__isnull=True) | models.Q(sin_asignacion=False),
+                name='concepto_libro_xor_sin_asignacion',
+            ),
+        ]
     
     def __str__(self):
         if self.concepto_libro:
@@ -116,8 +130,8 @@ class ConceptoNovedades(models.Model):
     
     @property
     def mapeado(self):
-        """Retorna True si tiene mapeo a ConceptoLibro."""
-        return self.concepto_libro is not None
+        """Retorna True si tiene mapeo a ConceptoLibro O está marcado sin_asignacion."""
+        return self.concepto_libro is not None or self.sin_asignacion
     
     @property
     def categoria(self):

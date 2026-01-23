@@ -131,6 +131,16 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
     ],
     'EXCEPTION_HANDLER': 'shared.exceptions.custom_exception_handler',
+    
+    # Rate limiting para seguridad (ISO 27001 A.12.2.1)
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.ScopedRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'mapeo': '100/hour',      # Operaciones de mapeo normales
+        'bulk': '20/hour',        # Operaciones bulk (mapear_batch, desmapear)
+        'upload': '30/hour',      # Subida de archivos
+    }
 }
 
 # ========================

@@ -28,7 +28,6 @@ class ConceptoLibro(models.Model):
         ('otros_descuentos', 'Otros Descuentos'),
         ('aportes_patronales', 'Aportes Patronales'),
         ('info_adicional', 'Información Adicional'),
-        ('ignorar', 'Ignorar'),
     ]
     
     cliente = models.ForeignKey(

@@ -34,6 +34,40 @@ def extraer_headers_novedades(self, archivo_id, usuario_id=None):
     import pandas as pd
     import unicodedata
     import re
+    import html
+    
+    def sanitizar_header(header: str) -> str:
+        """
+        Sanitiza un header de Excel para prevenir inyecciones.
+        
+        Seguridad:
+        - Remueve caracteres no imprimibles
+        - Limita longitud
+        - Remueve caracteres de inyección SQL/XSS
+        - Escapa HTML
+        """
+        if not header:
+            return ""
+        
+        header = str(header)
+        
+        # Remover caracteres no imprimibles
+        header = ''.join(c for c in header if c.isprintable())
+        
+        # Limitar longitud
+        MAX_HEADER_LENGTH = 200
+        header = header[:MAX_HEADER_LENGTH]
+        
+        # Remover caracteres peligrosos para SQL/script injection
+        header = re.sub(r'[;<>\'\"\\]', '', header)
+        
+        # Escapar HTML para prevenir XSS
+        header = html.escape(header)
+        
+        # Remover espacios excesivos
+        header = ' '.join(header.split())
+        
+        return header.strip()
     
     def normalizar_header(header: str) -> str:
         """Normaliza header para comparación."""
@@ -75,25 +109,21 @@ def extraer_headers_novedades(self, archivo_id, usuario_id=None):
         # Columnas que NO son items (identificación)
         columnas_ignoradas = ['rut', 'nombre', 'fecha', 'periodo', 'observacion', 'observaciones']
         
-        # Filtrar columnas de items
+        # Filtrar columnas de items y sanitizar
         headers = []
         for col in df.columns:
-            col_lower = col.lower().strip()
+            col_sanitizado = sanitizar_header(col)
+            if not col_sanitizado:
+                continue
+            col_lower = col_sanitizado.lower().strip()
             if col_lower not in columnas_ignoradas:
-                headers.append(col.strip())
+                headers.append(col_sanitizado)
         
         if not headers:
             raise ValueError("No se encontraron columnas de items en el archivo")
         
-        # Obtener ConceptoLibro existentes para auto-mapeo
-        conceptos_libro_dict = {}
-        for cl in ConceptoLibro.objects.filter(cliente=cliente, erp=erp, activo=True):
-            key = normalizar_header(cl.header_original)
-            conceptos_libro_dict[key] = cl
-        
         # Crear o reutilizar ConceptoNovedades por cada header
         conceptos_creados = 0
-        conceptos_mapeados = 0
         
         for orden, header_original in enumerate(headers, start=1):
             header_normalizado = normalizar_header(header_original)
@@ -112,30 +142,25 @@ def extraer_headers_novedades(self, archivo_id, usuario_id=None):
             
             if created:
                 conceptos_creados += 1
-                # Intentar auto-mapear por coincidencia de nombre normalizado
-                if header_normalizado in conceptos_libro_dict:
-                    concepto.concepto_libro = conceptos_libro_dict[header_normalizado]
-                    concepto.save()
-                    conceptos_mapeados += 1
             else:
                 # Actualizar orden si cambió
                 if concepto.orden != orden:
                     concepto.orden = orden
                     concepto.save()
-                
-                if concepto.concepto_libro:
-                    conceptos_mapeados += 1
         
         # Contar total de conceptos activos para este cliente+ERP
         total_conceptos = ConceptoNovedades.objects.filter(
             cliente=cliente, erp=erp, activo=True
         ).count()
         
+        # Sin mapear = no tiene concepto_libro NI está marcado sin_asignacion
         total_sin_mapear = ConceptoNovedades.objects.filter(
-            cliente=cliente, erp=erp, activo=True, concepto_libro__isnull=True
+            cliente=cliente, erp=erp, activo=True,
+            concepto_libro__isnull=True,
+            sin_asignacion=False
         ).count()
         
-        # Determinar estado: si todos mapeados → listo, sino → pendiente_mapeo
+        # Determinar estado: si todos mapeados/sin_asignacion → listo, sino → pendiente_mapeo
         if total_sin_mapear == 0:
             archivo.estado = EstadoArchivoNovedades.LISTO
         else:
@@ -145,13 +170,12 @@ def extraer_headers_novedades(self, archivo_id, usuario_id=None):
         
         logger.info(
             f"Headers novedades extraídos: {len(headers)} en archivo, "
-            f"{conceptos_creados} nuevos, {conceptos_mapeados} auto-mapeados"
+            f"{conceptos_creados} nuevos"
         )
         
         return {
             'headers_archivo': len(headers),
             'conceptos_nuevos': conceptos_creados,
-            'conceptos_mapeados': conceptos_mapeados,
             'total_conceptos': total_conceptos,
             'sin_mapear': total_sin_mapear,
             'estado': archivo.estado,
@@ -186,10 +210,21 @@ def procesar_archivo_analista(self, archivo_id, usuario_id=None):
         usuario_id: ID del usuario que inició la tarea (para auditoría)
     """
     from apps.validador.models import ArchivoAnalista
+    from apps.validador.constants import EstadoArchivoNovedades
     
     try:
         archivo = ArchivoAnalista.objects.select_related('cierre').get(id=archivo_id)
-        archivo.estado = 'procesando'
+        
+        # Validar estado para novedades: debe estar LISTO
+        if archivo.tipo == 'novedades':
+            if archivo.estado != EstadoArchivoNovedades.LISTO:
+                raise ValueError(
+                    f"Archivo de novedades debe estar en estado LISTO para procesar "
+                    f"(estado actual: {archivo.estado})"
+                )
+            archivo.estado = EstadoArchivoNovedades.PROCESANDO
+        else:
+            archivo.estado = 'procesando'
         archivo.save()
         
         logger.info(f"Procesando archivo Analista: {archivo.nombre_original}")
@@ -205,13 +240,18 @@ def procesar_archivo_analista(self, archivo_id, usuario_id=None):
         else:
             raise ValueError(f"Tipo de archivo desconocido: {archivo.tipo}")
         
-        archivo.estado = 'procesado'
+        # Actualizar estado según tipo
+        if archivo.tipo == 'novedades':
+            archivo.estado = EstadoArchivoNovedades.PROCESADO
+        else:
+            archivo.estado = 'procesado'
         archivo.filas_procesadas = resultado.get('filas', 0)
         archivo.fecha_procesamiento = timezone.now()
         archivo.save()
         
-        # Verificar si hay items nuevos por mapear
-        _verificar_mapeo_pendiente(archivo.cierre)
+        # Verificar si hay items nuevos por mapear (solo para otros tipos, no novedades)
+        if archivo.tipo != 'novedades':
+            _verificar_mapeo_pendiente(archivo.cierre)
         
         logger.info(f"Archivo Analista procesado: {archivo.nombre_original} - {resultado}")
         return resultado
@@ -221,7 +261,10 @@ def procesar_archivo_analista(self, archivo_id, usuario_id=None):
         
         try:
             archivo = ArchivoAnalista.objects.get(id=archivo_id)
-            archivo.estado = 'error'
+            if archivo.tipo == 'novedades':
+                archivo.estado = EstadoArchivoNovedades.ERROR
+            else:
+                archivo.estado = 'error'
             archivo.errores_procesamiento = [str(e)]
             archivo.save()
         except:
@@ -231,7 +274,13 @@ def procesar_archivo_analista(self, archivo_id, usuario_id=None):
 
 
 def _procesar_novedades(archivo):
-    """Procesa el archivo de Novedades del cliente."""
+    """
+    Procesa el archivo de Novedades del cliente.
+    
+    - Lee archivo Excel/CSV
+    - Crea RegistroNovedades por cada (RUT, item, monto)
+    - Ignora items marcados como sin_asignacion
+    """
     import pandas as pd
     import unicodedata
     import re
@@ -266,11 +315,17 @@ def _procesar_novedades(archivo):
     columnas_id = ['rut', 'nombre', 'fecha', 'periodo']
     columnas_item = [col for col in df.columns if col.lower().strip() not in columnas_id]
     
+    # Pre-cargar ConceptoNovedades del cliente para evitar N+1 queries
+    conceptos_dict = {}
+    for concepto in ConceptoNovedades.objects.filter(cliente=cliente, activo=True).select_related('concepto_libro'):
+        conceptos_dict[concepto.header_normalizado] = concepto
+    
     # Limpiar registros anteriores del cierre
     RegistroNovedades.objects.filter(cierre=cierre).delete()
     
     registros_creados = 0
-    items_nuevos = set()
+    registros_ignorados = 0  # Items sin_asignacion
+    registros_batch = []
     
     for _, row in df.iterrows():
         rut = str(row[rut_col]).strip()
@@ -290,28 +345,35 @@ def _procesar_novedades(archivo):
             
             # Buscar ConceptoNovedades por header normalizado
             header_normalizado = normalizar_header(nombre_item)
-            concepto = ConceptoNovedades.objects.filter(
-                cliente=cliente,
-                header_normalizado=header_normalizado,
-                activo=True
-            ).select_related('concepto_libro').first()
+            concepto = conceptos_dict.get(header_normalizado)
             
-            if not concepto or not concepto.concepto_libro:
-                items_nuevos.add(nombre_item.strip())
+            # Ignorar items marcados como sin_asignacion
+            if concepto and concepto.sin_asignacion:
+                registros_ignorados += 1
+                continue
             
-            RegistroNovedades.objects.create(
+            registros_batch.append(RegistroNovedades(
                 cierre=cierre,
                 rut_empleado=rut,
                 nombre_empleado=nombre,
                 nombre_item=nombre_item.strip(),
                 concepto_novedades=concepto,
                 monto=monto,
-            )
+            ))
             registros_creados += 1
+            
+            # Bulk insert cada 1000 registros
+            if len(registros_batch) >= 1000:
+                RegistroNovedades.objects.bulk_create(registros_batch)
+                registros_batch = []
+    
+    # Insertar registros restantes
+    if registros_batch:
+        RegistroNovedades.objects.bulk_create(registros_batch)
     
     return {
         'filas': registros_creados,
-        'items_sin_mapear': len(items_nuevos),
+        'ignorados_sin_asignacion': registros_ignorados,
     }
 
 

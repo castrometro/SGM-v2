@@ -6,8 +6,11 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from django.utils import timezone
 
+from apps.core.models import Cliente
+from apps.core.constants import TipoUsuario
 from ..models import (
     CategoriaConcepto, ConceptoCliente, 
     RegistroNovedades, ConceptoLibro, ConceptoNovedades, ArchivoAnalista
@@ -19,6 +22,39 @@ from ..serializers import (
     ConceptoSinClasificarSerializer,
 )
 from ..constants import EstadoArchivoNovedades
+
+# Constantes de seguridad
+MAX_BATCH_SIZE = 100  # Máximo de items por operación batch
+
+
+def verificar_acceso_cliente(user, cliente_id):
+    """
+    Verifica si el usuario tiene acceso al cliente especificado.
+    
+    Returns:
+        tuple: (tiene_acceso: bool, cliente: Cliente | None, error_response: Response | None)
+    """
+    try:
+        cliente = Cliente.objects.get(id=cliente_id, activo=True)
+    except Cliente.DoesNotExist:
+        return False, None, Response(
+            {'error': 'Cliente no encontrado'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    # Gerentes tienen acceso total
+    if user.tipo_usuario == TipoUsuario.GERENTE:
+        return True, cliente, None
+    
+    # Verificar acceso según rol
+    clientes_permitidos = user.get_todos_los_clientes()
+    if cliente not in clientes_permitidos:
+        return False, cliente, Response(
+            {'error': 'No tiene acceso a este cliente'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    return True, cliente, None
 
 
 class CategoriaConceptoViewSet(viewsets.ReadOnlyModelViewSet):
@@ -119,14 +155,27 @@ class MapeoItemNovedadesViewSet(viewsets.ModelViewSet):
     
     Los mapeos son por cliente+ERP y se reutilizan entre cierres.
     Similar en patrón a ConceptoLibro, pero con FK a ConceptoLibro en vez de categoria.
+    
+    Seguridad:
+    - Autenticación requerida
+    - Verificación de acceso a cliente en cada endpoint
+    - Rate limiting en operaciones batch
     """
     
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'mapeo'
     
     def get_queryset(self):
         queryset = ConceptoNovedades.objects.select_related(
             'cliente', 'erp', 'concepto_libro', 'mapeado_por'
         ).filter(activo=True)
+        
+        # Filtrar por clientes permitidos para el usuario
+        user = self.request.user
+        if user.tipo_usuario != TipoUsuario.GERENTE:
+            clientes_permitidos = user.get_todos_los_clientes()
+            queryset = queryset.filter(cliente__in=clientes_permitidos)
         
         cliente_id = self.request.query_params.get('cliente')
         if cliente_id:
@@ -143,6 +192,8 @@ class MapeoItemNovedadesViewSet(viewsets.ModelViewSet):
         """
         Obtener conceptos de novedades sin mapear para un cliente+ERP.
         
+        Sin mapear = no tiene concepto_libro Y no está marcado sin_asignacion
+        
         Query params:
             cliente_id: ID del cliente (requerido)
             erp_id: ID del ERP (opcional, se infiere del cliente si no se da)
@@ -154,9 +205,15 @@ class MapeoItemNovedadesViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Verificar acceso al cliente
+        tiene_acceso, cliente, error_response = verificar_acceso_cliente(request.user, cliente_id)
+        if not tiene_acceso:
+            return error_response
+        
         queryset = ConceptoNovedades.objects.filter(
             cliente_id=cliente_id,
             concepto_libro__isnull=True,
+            sin_asignacion=False,
             activo=True
         ).order_by('orden')
         
@@ -171,6 +228,60 @@ class MapeoItemNovedadesViewSet(viewsets.ModelViewSet):
                     'id': item.id,
                     'header_original': item.header_original,
                     'orden': item.orden,
+                }
+                for item in queryset
+            ]
+        })
+    
+    @action(detail=False, methods=['get'])
+    def mapeados(self, request):
+        """
+        Obtener conceptos de novedades ya mapeados para un cliente+ERP.
+        
+        Mapeado = tiene concepto_libro O está marcado sin_asignacion
+        
+        Query params:
+            cliente_id: ID del cliente (requerido)
+            erp_id: ID del ERP (opcional)
+        """
+        cliente_id = request.query_params.get('cliente_id')
+        if not cliente_id:
+            return Response(
+                {'error': 'cliente_id es requerido'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Verificar acceso al cliente
+        tiene_acceso, cliente, error_response = verificar_acceso_cliente(request.user, cliente_id)
+        if not tiene_acceso:
+            return error_response
+        
+        from django.db.models import Q
+        queryset = ConceptoNovedades.objects.filter(
+            cliente_id=cliente_id,
+            activo=True
+        ).filter(
+            Q(concepto_libro__isnull=False) | Q(sin_asignacion=True)
+        ).select_related('concepto_libro').order_by('orden')
+        
+        erp_id = request.query_params.get('erp_id')
+        if erp_id:
+            queryset = queryset.filter(erp_id=erp_id)
+        
+        return Response({
+            'count': queryset.count(),
+            'items': [
+                {
+                    'id': item.id,
+                    'header_original': item.header_original,
+                    'orden': item.orden,
+                    'sin_asignacion': item.sin_asignacion,
+                    'concepto_libro': {
+                        'id': item.concepto_libro.id,
+                        'header_original': item.concepto_libro.header_original,
+                        'categoria': item.concepto_libro.categoria,
+                        'categoria_display': item.concepto_libro.get_categoria_display(),
+                    } if item.concepto_libro else None,
                 }
                 for item in queryset
             ]
@@ -192,6 +303,11 @@ class MapeoItemNovedadesViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Verificar acceso al cliente
+        tiene_acceso, cliente, error_response = verificar_acceso_cliente(request.user, cliente_id)
+        if not tiene_acceso:
+            return error_response
+        
         queryset = ConceptoLibro.objects.filter(
             cliente_id=cliente_id,
             activo=True,
@@ -203,6 +319,16 @@ class MapeoItemNovedadesViewSet(viewsets.ModelViewSet):
         
         conceptos = queryset.order_by('categoria', 'orden', 'header_original')
         
+        # Obtener IDs de conceptos ya mapeados en novedades
+        conceptos_usados = set(
+            ConceptoNovedades.objects.filter(
+                cliente_id=cliente_id,
+                erp_id=erp_id,
+                concepto_libro__isnull=False,
+                activo=True
+            ).values_list('concepto_libro_id', flat=True)
+        )
+        
         return Response({
             'count': conceptos.count(),
             'conceptos': [
@@ -212,25 +338,34 @@ class MapeoItemNovedadesViewSet(viewsets.ModelViewSet):
                     'header_pandas': c.header_pandas,
                     'categoria': c.categoria,
                     'categoria_display': c.get_categoria_display(),
+                    'usado': c.id in conceptos_usados,
                 }
                 for c in conceptos
             ]
         })
     
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], throttle_scope='bulk')
     def mapear_batch(self, request):
         """
-        Mapear múltiples ConceptoNovedades a ConceptoLibro.
+        Mapear múltiples ConceptoNovedades a ConceptoLibro o marcar sin_asignacion.
         
         Espera:
             mapeos: [
                 { concepto_novedades_id: 1, concepto_libro_id: 45 },
-                { concepto_novedades_id: 2, concepto_libro_id: 67 },
+                { concepto_novedades_id: 2, sin_asignacion: true },
             ]
+            archivo_id: ID del ArchivoAnalista (opcional, para actualizar estado)
         
-        Actualiza ConceptoNovedades con el concepto_libro correspondiente.
+        Actualiza ConceptoNovedades con el mapeo correspondiente.
+        Si todos los conceptos quedan mapeados/sin_asignacion, actualiza estado archivo a LISTO.
+        
+        Seguridad:
+        - Rate limiting: máx 10/hora para operaciones bulk
+        - Validación de tamaño: máx 100 items por batch
+        - Verificación de acceso a cliente
         """
         mapeos_data = request.data.get('mapeos', [])
+        archivo_id = request.data.get('archivo_id')
         
         if not mapeos_data:
             return Response(
@@ -238,29 +373,91 @@ class MapeoItemNovedadesViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Validación de tamaño del batch
+        if len(mapeos_data) > MAX_BATCH_SIZE:
+            return Response(
+                {'error': f'Máximo {MAX_BATCH_SIZE} mapeos por operación'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Obtener el primer concepto para verificar acceso al cliente
+        primer_concepto_id = None
+        for m in mapeos_data:
+            if m.get('concepto_novedades_id'):
+                primer_concepto_id = m['concepto_novedades_id']
+                break
+        
+        if primer_concepto_id:
+            try:
+                primer_concepto = ConceptoNovedades.objects.get(id=primer_concepto_id)
+                tiene_acceso, cliente, error_response = verificar_acceso_cliente(
+                    request.user, primer_concepto.cliente_id
+                )
+                if not tiene_acceso:
+                    return error_response
+            except ConceptoNovedades.DoesNotExist:
+                pass
+        
         mapeados = 0
         errores = []
+        cliente_id = None
+        erp_id = None
         
         for mapeo_data in mapeos_data:
             concepto_novedades_id = mapeo_data.get('concepto_novedades_id')
             concepto_libro_id = mapeo_data.get('concepto_libro_id')
+            marcar_sin_asignacion = mapeo_data.get('sin_asignacion', False)
             
-            if not concepto_novedades_id or not concepto_libro_id:
-                errores.append(f"Datos incompletos: {mapeo_data}")
+            if not concepto_novedades_id:
+                errores.append(f"Falta concepto_novedades_id: {mapeo_data}")
+                continue
+            
+            # Debe tener concepto_libro_id O sin_asignacion=True
+            if not concepto_libro_id and not marcar_sin_asignacion:
+                errores.append(f"Debe indicar concepto_libro_id o sin_asignacion=true: {mapeo_data}")
                 continue
             
             try:
                 concepto_novedades = ConceptoNovedades.objects.get(id=concepto_novedades_id)
-                concepto_libro = ConceptoLibro.objects.get(
-                    id=concepto_libro_id, 
-                    cliente=concepto_novedades.cliente
-                )
+                cliente_id = concepto_novedades.cliente_id
+                erp_id = concepto_novedades.erp_id
                 
-                concepto_novedades.concepto_libro = concepto_libro
-                concepto_novedades.mapeado_por = request.user
-                concepto_novedades.fecha_mapeo = timezone.now()
-                concepto_novedades.save()
-                mapeados += 1
+                if marcar_sin_asignacion:
+                    # Marcar como sin asignación
+                    concepto_novedades.sin_asignacion = True
+                    concepto_novedades.concepto_libro = None
+                    concepto_novedades.mapeado_por = request.user
+                    concepto_novedades.fecha_mapeo = timezone.now()
+                    concepto_novedades.save()
+                    mapeados += 1
+                else:
+                    # Mapear a concepto del libro
+                    concepto_libro = ConceptoLibro.objects.get(
+                        id=concepto_libro_id, 
+                        cliente=concepto_novedades.cliente
+                    )
+                    
+                    # Validar mapeo 1:1 - verificar que el concepto_libro no esté ya usado
+                    ya_mapeado = ConceptoNovedades.objects.filter(
+                        cliente=concepto_novedades.cliente,
+                        erp=concepto_novedades.erp,
+                        concepto_libro=concepto_libro,
+                        activo=True
+                    ).exclude(id=concepto_novedades.id).first()
+                    
+                    if ya_mapeado:
+                        errores.append(
+                            f"ConceptoLibro '{concepto_libro.header_original}' ya está mapeado a "
+                            f"'{ya_mapeado.header_original}'"
+                        )
+                        continue
+                    
+                    concepto_novedades.concepto_libro = concepto_libro
+                    concepto_novedades.sin_asignacion = False
+                    concepto_novedades.mapeado_por = request.user
+                    concepto_novedades.fecha_mapeo = timezone.now()
+                    concepto_novedades.save()
+                    mapeados += 1
                 
             except ConceptoNovedades.DoesNotExist:
                 errores.append(f"ConceptoNovedades {concepto_novedades_id} no encontrado")
@@ -269,29 +466,122 @@ class MapeoItemNovedadesViewSet(viewsets.ModelViewSet):
             except Exception as e:
                 errores.append(f"Error en concepto {concepto_novedades_id}: {str(e)}")
         
-        # Obtener cliente_id del primer mapeo para verificar estado
-        if mapeos_data and mapeados > 0:
-            try:
-                primer_concepto = ConceptoNovedades.objects.get(
-                    id=mapeos_data[0].get('concepto_novedades_id')
-                )
-                cliente_id = primer_concepto.cliente_id
-                erp_id = primer_concepto.erp_id
-                
-                # Verificar si todos los conceptos están mapeados
-                sin_mapear = ConceptoNovedades.objects.filter(
-                    cliente_id=cliente_id,
-                    erp_id=erp_id,
-                    concepto_libro__isnull=True,
-                    activo=True
-                ).count()
-            except:
-                sin_mapear = -1
-        else:
-            sin_mapear = -1
+        # Verificar si todos los conceptos están completos (mapeados o sin_asignacion)
+        sin_mapear = -1
+        estado_archivo = None
+        
+        if cliente_id and erp_id and mapeados > 0:
+            sin_mapear = ConceptoNovedades.objects.filter(
+                cliente_id=cliente_id,
+                erp_id=erp_id,
+                concepto_libro__isnull=True,
+                sin_asignacion=False,
+                activo=True
+            ).count()
+            
+            # Actualizar estado del archivo si se proporcionó archivo_id
+            if archivo_id and sin_mapear == 0:
+                try:
+                    archivo = ArchivoAnalista.objects.get(id=archivo_id)
+                    if archivo.estado == EstadoArchivoNovedades.PENDIENTE_MAPEO:
+                        archivo.estado = EstadoArchivoNovedades.LISTO
+                        archivo.save()
+                        estado_archivo = archivo.estado
+                except ArchivoAnalista.DoesNotExist:
+                    pass
         
         return Response({
             'mapeados': mapeados,
             'errores': errores,
             'sin_mapear': sin_mapear,
+            'estado_archivo': estado_archivo,
+        })
+    
+    @action(detail=False, methods=['post'], throttle_scope='bulk')
+    def desmapear(self, request):
+        """
+        Quitar mapeo de conceptos de novedades.
+        
+        Espera:
+            concepto_ids: [1, 2, 3]  - IDs de ConceptoNovedades a desmapear
+            archivo_id: ID del ArchivoAnalista (opcional, para actualizar estado)
+        
+        Pone concepto_libro=None y sin_asignacion=False.
+        
+        Seguridad:
+        - Rate limiting: máx 10/hora para operaciones bulk
+        - Validación de tamaño: máx 100 items por batch
+        - Verificación de acceso a cliente
+        """
+        concepto_ids = request.data.get('concepto_ids', [])
+        archivo_id = request.data.get('archivo_id')
+        
+        if not concepto_ids:
+            return Response(
+                {'error': 'concepto_ids es requerido'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validación de tamaño del batch
+        if len(concepto_ids) > MAX_BATCH_SIZE:
+            return Response(
+                {'error': f'Máximo {MAX_BATCH_SIZE} conceptos por operación'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Verificar acceso al cliente del primer concepto
+        if concepto_ids:
+            try:
+                primer_concepto = ConceptoNovedades.objects.get(id=concepto_ids[0])
+                tiene_acceso, cliente, error_response = verificar_acceso_cliente(
+                    request.user, primer_concepto.cliente_id
+                )
+                if not tiene_acceso:
+                    return error_response
+            except ConceptoNovedades.DoesNotExist:
+                pass
+        
+        desmapeados = 0
+        cliente_id = None
+        erp_id = None
+        
+        for concepto_id in concepto_ids:
+            try:
+                concepto = ConceptoNovedades.objects.get(id=concepto_id, activo=True)
+                cliente_id = concepto.cliente_id
+                erp_id = concepto.erp_id
+                
+                concepto.concepto_libro = None
+                concepto.sin_asignacion = False
+                concepto.mapeado_por = None
+                concepto.fecha_mapeo = None
+                concepto.save()
+                desmapeados += 1
+            except ConceptoNovedades.DoesNotExist:
+                pass
+        
+        # Actualizar estado del archivo si hay conceptos sin mapear
+        estado_archivo = None
+        if archivo_id and cliente_id and erp_id:
+            sin_mapear = ConceptoNovedades.objects.filter(
+                cliente_id=cliente_id,
+                erp_id=erp_id,
+                concepto_libro__isnull=True,
+                sin_asignacion=False,
+                activo=True
+            ).count()
+            
+            if sin_mapear > 0:
+                try:
+                    archivo = ArchivoAnalista.objects.get(id=archivo_id)
+                    if archivo.estado == EstadoArchivoNovedades.LISTO:
+                        archivo.estado = EstadoArchivoNovedades.PENDIENTE_MAPEO
+                        archivo.save()
+                        estado_archivo = archivo.estado
+                except ArchivoAnalista.DoesNotExist:
+                    pass
+        
+        return Response({
+            'desmapeados': desmapeados,
+            'estado_archivo': estado_archivo,
         })

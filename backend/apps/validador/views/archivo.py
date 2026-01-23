@@ -202,7 +202,8 @@ class ArchivoAnalistaViewSet(viewsets.ModelViewSet):
                 'id': concepto.id,
                 'header_original': concepto.header_original,
                 'orden': concepto.orden,
-                'mapeado': concepto.mapeado,
+                'mapeado': concepto.mapeado,  # True si tiene concepto_libro O sin_asignacion
+                'sin_asignacion': concepto.sin_asignacion,
                 'concepto_libro': {
                     'id': concepto.concepto_libro.id,
                     'header_original': concepto.concepto_libro.header_original,
@@ -231,9 +232,11 @@ class ArchivoAnalistaViewSet(viewsets.ModelViewSet):
             for c in conceptos_libro
         ]
         
-        # Resumen
+        # Resumen - mapeado = tiene concepto_libro O sin_asignacion
         total = conceptos.count()
-        mapeados = conceptos.filter(concepto_libro__isnull=False).count()
+        con_concepto_libro = conceptos.filter(concepto_libro__isnull=False).count()
+        con_sin_asignacion = conceptos.filter(sin_asignacion=True, concepto_libro__isnull=True).count()
+        mapeados = con_concepto_libro + con_sin_asignacion
         
         return Response({
             'archivo_id': archivo.id,
@@ -243,6 +246,8 @@ class ArchivoAnalistaViewSet(viewsets.ModelViewSet):
             'resumen': {
                 'total': total,
                 'mapeados': mapeados,
+                'con_concepto_libro': con_concepto_libro,
+                'sin_asignacion': con_sin_asignacion,
                 'pendientes': total - mapeados,
                 'progreso': round(mapeados / total * 100, 1) if total > 0 else 0,
             }
@@ -269,6 +274,41 @@ class ArchivoAnalistaViewSet(viewsets.ModelViewSet):
         
         return Response({
             'mensaje': 'Extracción de headers iniciada',
+            'archivo_id': archivo.id,
+        })
+    
+    @action(detail=True, methods=['post'])
+    def procesar(self, request, pk=None):
+        """
+        Procesa el archivo de novedades creando RegistroNovedades.
+        
+        Prerequisitos:
+            - Archivo debe estar en estado LISTO (todos los headers mapeados/sin_asignacion)
+        
+        Dispara la tarea procesar_archivo_analista que:
+            - Lee el archivo Excel/CSV
+            - Crea RegistroNovedades por cada (RUT, item, monto)
+            - Ignora items marcados como sin_asignacion
+        """
+        archivo = self.get_object()
+        
+        if archivo.tipo != 'novedades':
+            return Response(
+                {'error': 'Este endpoint solo aplica para archivos de novedades'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if archivo.estado != EstadoArchivoNovedades.LISTO:
+            return Response(
+                {'error': f'El archivo debe estar en estado LISTO para procesar (estado actual: {archivo.estado})'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Disparar tarea de procesamiento
+        procesar_archivo_analista.delay(archivo.id, usuario_id=request.user.id)
+        
+        return Response({
+            'mensaje': 'Procesamiento iniciado',
             'archivo_id': archivo.id,
         })
     

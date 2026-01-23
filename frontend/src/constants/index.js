@@ -683,7 +683,6 @@ export const CATEGORIA_CONCEPTO_LIBRO = Object.freeze({
   otros_descuentos: 'Otros Descuentos',
   aportes_patronales: 'Aportes Patronales',
   info_adicional: 'Información Adicional',
-  ignorar: 'Ignorar',
 })
 
 /**

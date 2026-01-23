@@ -14,6 +14,7 @@ from .models import (
     EmpleadoCierre,
     EmpleadoLibro,
     RegistroLibro,
+    RegistroNovedades,
     Discrepancia,
     Incidencia,
     ComentarioIncidencia,
@@ -170,6 +171,14 @@ class RegistroLibroAdmin(admin.ModelAdmin):
     list_filter = ['cierre__cliente', 'cierre__periodo', 'concepto__categoria']
     search_fields = ['empleado__rut', 'empleado__nombre', 'concepto__nombre']
     raw_id_fields = ['cierre', 'empleado', 'concepto']
+
+
+@admin.register(RegistroNovedades)
+class RegistroNovedadesAdmin(admin.ModelAdmin):
+    list_display = ['rut_empleado', 'nombre_item', 'monto', 'concepto_novedades', 'cierre']
+    list_filter = ['cierre__cliente', 'cierre__periodo']
+    search_fields = ['rut_empleado', 'nombre_empleado', 'nombre_item']
+    raw_id_fields = ['cierre', 'concepto_novedades']
 
 
 @admin.register(Discrepancia)

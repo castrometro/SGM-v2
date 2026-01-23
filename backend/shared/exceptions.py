@@ -2,11 +2,16 @@
 Manejo de excepciones personalizado para SGM v2.
 """
 
+import logging
+import traceback
+
 from rest_framework.views import exception_handler
 from rest_framework.response import Response
 from rest_framework import status
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import Http404
+
+logger = logging.getLogger(__name__)
 
 
 def custom_exception_handler(exc, context):
@@ -28,6 +33,12 @@ def custom_exception_handler(exc, context):
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # Log full traceback for unhandled exceptions
+        view_name = context.get('view').__class__.__name__ if context.get('view') else 'Unknown'
+        logger.error(
+            f"Unhandled exception in {view_name}: {exc}\n{traceback.format_exc()}"
+        )
         
         # Para cualquier otra excepción no manejada
         return Response(

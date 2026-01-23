@@ -104,26 +104,21 @@ class CanAccessCliente(permissions.BasePermission):
             return True
         
         # Obtener el cliente del objeto
+        from apps.core.models import Cliente
         cliente = getattr(obj, 'cliente', obj)
         
-        # Supervisores: acceso a clientes de sus analistas
+        # Supervisores: acceso a clientes de sus analistas + propios
         if user.tipo_usuario == TipoUsuario.SUPERVISOR:
-            from apps.core.models import AsignacionClienteUsuario
             analistas_ids = list(user.analistas_supervisados.values_list('id', flat=True))
             analistas_ids.append(user.id)  # Incluir sus propias asignaciones
-            return AsignacionClienteUsuario.objects.filter(
-                cliente=cliente,
-                usuario_id__in=analistas_ids,
+            return Cliente.objects.filter(
+                pk=cliente.pk,
+                usuario_asignado_id__in=analistas_ids,
                 activo=True
             ).exists()
         
         # Analistas: solo sus clientes asignados
-        from apps.core.models import AsignacionClienteUsuario
-        return AsignacionClienteUsuario.objects.filter(
-            cliente=cliente,
-            usuario=user,
-            activo=True
-        ).exists()
+        return cliente.usuario_asignado_id == user.id
 
 
 class CanAccessCierre(permissions.BasePermission):
