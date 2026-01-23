@@ -3,6 +3,7 @@ Celery Tasks para comparación y detección de discrepancias.
 """
 
 from celery import shared_task
+from celery.exceptions import SoftTimeLimitExceeded
 from django.utils import timezone
 from decimal import Decimal
 import logging
@@ -10,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=600, time_limit=720)
 def ejecutar_comparacion(self, cierre_id, usuario_id=None):
     """
     Ejecuta la comparación entre datos ERP y datos del Analista.
@@ -23,6 +24,10 @@ def ejecutar_comparacion(self, cierre_id, usuario_id=None):
     Args:
         cierre_id: ID del Cierre a procesar
         usuario_id: ID del usuario que inició la tarea (para auditoría)
+    
+    Timeouts:
+        soft_time_limit: 10 min (warning)
+        time_limit: 12 min (kill)
     """
     from apps.validador.models import Cierre
     

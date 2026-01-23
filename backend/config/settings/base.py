@@ -140,6 +140,7 @@ REST_FRAMEWORK = {
         'mapeo': '100/hour',      # Operaciones de mapeo normales
         'bulk': '20/hour',        # Operaciones bulk (mapear_batch, desmapear)
         'upload': '30/hour',      # Subida de archivos
+        'procesamiento': '10/hour',  # Procesamiento de archivos (dispara Celery)
     }
 }
 

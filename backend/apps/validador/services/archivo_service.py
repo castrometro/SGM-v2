@@ -33,10 +33,24 @@ class ArchivoService(BaseService):
     EXTENSIONES_PERMITIDAS = ['.xlsx', '.xls', '.csv']
     MAX_FILE_SIZE_MB = 50
     
+    # Magic bytes para validación de tipo de archivo
+    MAGIC_BYTES = {
+        '.xlsx': [b'PK\x03\x04'],  # ZIP (OOXML)
+        '.xls': [b'\xd0\xcf\x11\xe0'],  # OLE Compound Document
+        '.csv': None,  # CSV es texto, no tiene magic bytes específicos
+    }
+    
     @classmethod
     def validar_archivo(cls, archivo, tipo: str, es_erp: bool = True) -> Optional[str]:
         """
         Validar archivo antes de subir.
+        
+        Capas de seguridad:
+        1. Validar tipo de archivo
+        2. Validar extensión
+        3. Validar magic bytes (prevenir rename attacks)
+        4. Validar tamaño
+        5. Sanitizar nombre de archivo
         
         Args:
             archivo: Archivo subido (UploadedFile)
@@ -46,20 +60,38 @@ class ArchivoService(BaseService):
         Returns:
             None si es válido, mensaje de error si no
         """
-        # Validar tipo
+        import re
+        
+        # Layer 1: Validar tipo
         tipos_validos = cls.TIPOS_ERP if es_erp else cls.TIPOS_ANALISTA
         if tipo not in tipos_validos:
             return f'Tipo inválido. Tipos válidos: {tipos_validos}'
         
-        # Validar extensión
+        # Layer 2: Validar extensión
         _, ext = os.path.splitext(archivo.name.lower())
         if ext not in cls.EXTENSIONES_PERMITIDAS:
             return f'Extensión no permitida. Extensiones válidas: {cls.EXTENSIONES_PERMITIDAS}'
         
-        # Validar tamaño
+        # Layer 3: Validar magic bytes (prevenir rename attacks)
+        expected_magic = cls.MAGIC_BYTES.get(ext)
+        if expected_magic:
+            try:
+                header = archivo.read(16)
+                archivo.seek(0)  # Reset file pointer
+                
+                if not any(header.startswith(magic) for magic in expected_magic):
+                    return f'El contenido del archivo no coincide con la extensión {ext}'
+            except Exception:
+                return 'Error al validar el tipo de archivo'
+        
+        # Layer 4: Validar tamaño
         max_size = cls.MAX_FILE_SIZE_MB * 1024 * 1024
         if archivo.size > max_size:
             return f'Archivo muy grande. Máximo: {cls.MAX_FILE_SIZE_MB}MB'
+        
+        # Layer 5: Sanitizar nombre de archivo (prevenir path traversal)
+        if not re.match(r'^[\w\-. ]+$', archivo.name):
+            return 'Nombre de archivo contiene caracteres no permitidos'
         
         return None
     

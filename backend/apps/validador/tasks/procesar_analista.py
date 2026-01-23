@@ -3,13 +3,14 @@ Celery Tasks para procesamiento de Archivos del Analista.
 """
 
 from celery import shared_task
+from celery.exceptions import SoftTimeLimitExceeded
 from django.utils import timezone
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=300, time_limit=360)
 def extraer_headers_novedades(self, archivo_id, usuario_id=None):
     """
     Extrae los headers (items) del archivo de Novedades.
@@ -28,6 +29,10 @@ def extraer_headers_novedades(self, archivo_id, usuario_id=None):
     Args:
         archivo_id: ID del ArchivoAnalista tipo='novedades'
         usuario_id: ID del usuario que inició la tarea
+    
+    Timeouts:
+        soft_time_limit: 5 min (warning)
+        time_limit: 6 min (kill)
     """
     from apps.validador.models import ArchivoAnalista, ConceptoNovedades, ConceptoLibro
     from apps.validador.constants import EstadoArchivoNovedades
@@ -195,7 +200,7 @@ def extraer_headers_novedades(self, archivo_id, usuario_id=None):
         raise self.retry(exc=e, countdown=60)
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=600, time_limit=720)
 def procesar_archivo_analista(self, archivo_id, usuario_id=None):
     """
     Procesa un archivo del Analista (Novedades, Asistencias, Finiquitos, Ingresos).
@@ -208,6 +213,10 @@ def procesar_archivo_analista(self, archivo_id, usuario_id=None):
     Args:
         archivo_id: ID del ArchivoAnalista a procesar
         usuario_id: ID del usuario que inició la tarea (para auditoría)
+    
+    Timeouts:
+        soft_time_limit: 10 min (warning)
+        time_limit: 12 min (kill)
     """
     from apps.validador.models import ArchivoAnalista
     from apps.validador.constants import EstadoArchivoNovedades

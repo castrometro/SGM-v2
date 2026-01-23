@@ -277,7 +277,7 @@ class ArchivoAnalistaViewSet(viewsets.ModelViewSet):
             'archivo_id': archivo.id,
         })
     
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'], throttle_scope='procesamiento')
     def procesar(self, request, pk=None):
         """
         Procesa el archivo de novedades creando RegistroNovedades.
@@ -289,6 +289,8 @@ class ArchivoAnalistaViewSet(viewsets.ModelViewSet):
             - Lee el archivo Excel/CSV
             - Crea RegistroNovedades por cada (RUT, item, monto)
             - Ignora items marcados como sin_asignacion
+        
+        Rate limit: 10/hour por usuario (scope: procesamiento)
         """
         archivo = self.get_object()
         

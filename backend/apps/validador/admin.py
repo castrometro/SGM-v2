@@ -175,10 +175,27 @@ class RegistroLibroAdmin(admin.ModelAdmin):
 
 @admin.register(RegistroNovedades)
 class RegistroNovedadesAdmin(admin.ModelAdmin):
-    list_display = ['rut_empleado', 'nombre_item', 'monto', 'concepto_novedades', 'cierre']
-    list_filter = ['cierre__cliente', 'cierre__periodo']
+    list_display = [
+        'rut_empleado', 'nombre_empleado', 'nombre_item', 
+        'monto_formateado', 'concepto_novedades', 'cierre_info'
+    ]
+    list_filter = [
+        'cierre__cliente', 
+        'cierre__periodo',
+        ('concepto_novedades', admin.RelatedOnlyFieldListFilter),
+    ]
     search_fields = ['rut_empleado', 'nombre_empleado', 'nombre_item']
     raw_id_fields = ['cierre', 'concepto_novedades']
+    list_per_page = 50
+    list_select_related = ['cierre', 'cierre__cliente', 'concepto_novedades']
+    
+    @admin.display(description='Monto')
+    def monto_formateado(self, obj):
+        return f"${obj.monto:,.0f}"
+    
+    @admin.display(description='Cierre')
+    def cierre_info(self, obj):
+        return f"{obj.cierre.cliente.razon_social} - {obj.cierre.periodo}"
 
 
 @admin.register(Discrepancia)

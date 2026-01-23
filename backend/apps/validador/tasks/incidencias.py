@@ -3,6 +3,7 @@ Celery Tasks para detección de incidencias.
 """
 
 from celery import shared_task
+from celery.exceptions import SoftTimeLimitExceeded
 from django.utils import timezone
 from decimal import Decimal
 import logging
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 UMBRAL_VARIACION = Decimal('30')
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=300, time_limit=360)
 def detectar_incidencias(self, cierre_id, usuario_id=None):
     """
     Detecta incidencias comparando totales con el mes anterior.
@@ -28,6 +29,10 @@ def detectar_incidencias(self, cierre_id, usuario_id=None):
     Args:
         cierre_id: ID del Cierre a procesar
         usuario_id: ID del usuario que inició la tarea (para auditoría)
+    
+    Timeouts:
+        soft_time_limit: 5 min (warning)
+        time_limit: 6 min (kill)
     """
     from apps.validador.models import Cierre, Incidencia
     
@@ -183,14 +188,18 @@ def _detectar_incidencias_por_concepto(cierre, cierre_anterior):
     }
 
 
-@shared_task
-def generar_consolidacion(cierre_id, usuario_id=None):
+@shared_task(bind=True, soft_time_limit=300, time_limit=360)
+def generar_consolidacion(self, cierre_id, usuario_id=None):
     """
     Genera los resúmenes consolidados después de que discrepancias = 0.
     
     Args:
         cierre_id: ID del Cierre a consolidar
         usuario_id: ID del usuario que inició la tarea (para auditoría)
+    
+    Timeouts:
+        soft_time_limit: 5 min (warning)
+        time_limit: 6 min (kill)
     """
     from apps.validador.models import (
         Cierre,

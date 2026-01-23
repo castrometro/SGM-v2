@@ -15,7 +15,7 @@ SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 
-# Logging para producción
+# Logging estructurado para producción (ISO 27001 A.12.4.1)
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -24,18 +24,26 @@ LOGGING = {
             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
             'style': '{',
         },
+        'json': {
+            '()': 'pythonjsonlogger.jsonlogger.JsonFormatter',
+            'format': '%(asctime)s %(levelname)s %(name)s %(module)s %(funcName)s %(lineno)d %(message)s',
+            'rename_fields': {
+                'asctime': 'timestamp',
+                'levelname': 'level',
+            },
+        },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
+            'formatter': 'json',
         },
         'file': {
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': '/app/logs/sgm.log',
             'maxBytes': 10485760,  # 10MB
             'backupCount': 5,
-            'formatter': 'verbose',
+            'formatter': 'json',
         },
     },
     'root': {

@@ -337,6 +337,35 @@ const MapeoNovedadesModal = ({
   const [mapeosPendientes, setMapeosPendientes] = useState({}) // { conceptoNovedadesId: conceptoLibroId | 'sin_asignacion' }
   const [draggedItems, setDraggedItems] = useState([])
   const [dragOverConcepto, setDragOverConcepto] = useState(null)
+  const [procesando, setProcesando] = useState(false) // Estado de procesamiento en curso
+
+  // Query para polling del estado del archivo durante procesamiento
+  // Usa backoff exponencial con jitter para evitar thundering herd
+  const [pollAttempt, setPollAttempt] = useState(0)
+  
+  const { data: archivoPolling } = useQuery({
+    queryKey: ['archivo-analista-polling', archivo?.id],
+    queryFn: async () => {
+      const { data } = await api.get(`/v1/validador/archivos-analista/${archivo.id}/`)
+      return data
+    },
+    enabled: procesando && !!archivo?.id,
+    refetchInterval: () => {
+      if (!procesando) return false
+      
+      // Backoff: 2s → 4s → 8s → 10s (max)
+      const baseDelay = 2000
+      const maxDelay = 10000
+      const backoff = Math.min(baseDelay * Math.pow(2, pollAttempt), maxDelay)
+      
+      // Jitter: ±20% para evitar sincronización
+      const jitter = backoff * 0.2 * (Math.random() - 0.5)
+      return Math.round(backoff + jitter)
+    },
+    onSuccess: () => {
+      setPollAttempt(prev => prev + 1)
+    }
+  })
 
   // Queries
   const { data: conceptosSinMapear, isLoading: loadingConceptos } = useConceptosNovedadesSinMapear(
@@ -400,12 +429,32 @@ const MapeoNovedadesModal = ({
       return data
     },
     onSuccess: () => {
+      // Iniciar polling en vez de cerrar
+      setProcesando(true)
+      setPollAttempt(0) // Reset backoff
+    },
+    onError: () => {
+      setProcesando(false)
+    }
+  })
+
+  // Effect para detectar cuando termina el procesamiento
+  useEffect(() => {
+    if (!procesando || !archivoPolling) return
+    
+    if (archivoPolling.estado === ESTADO_ARCHIVO_NOVEDADES.PROCESADO) {
+      // Éxito: cerrar modal y notificar
+      setProcesando(false)
       queryClient.invalidateQueries(['archivos-analista', cierreId])
       queryClient.invalidateQueries(['cierre', cierreId])
       if (onMapeoComplete) onMapeoComplete()
       onClose()
+    } else if (archivoPolling.estado === ESTADO_ARCHIVO_NOVEDADES.ERROR) {
+      // Error: detener polling y mostrar mensaje
+      setProcesando(false)
+      queryClient.invalidateQueries(['archivos-analista', cierreId])
     }
-  })
+  }, [archivoPolling, procesando, cierreId, queryClient, onMapeoComplete, onClose])
 
   // Reset al abrir
   useEffect(() => {
@@ -418,6 +467,8 @@ const MapeoNovedadesModal = ({
       setBusquedaLibro('')
       setBusquedaMapeados('')
       setMapeosPendientes({})
+      setProcesando(false)
+      setPollAttempt(0)
     }
   }, [isOpen])
 
@@ -600,6 +651,14 @@ const MapeoNovedadesModal = ({
     })
   }
 
+  // Procesar novedades con confirmación
+  const handleProcesar = () => {
+    const confirmMessage = `¿Procesar ${mapeadosCount} conceptos mapeados?\n\nEsta acción creará los registros de novedades y no se puede deshacer.`
+    if (window.confirm(confirmMessage)) {
+      procesarMutation.mutate()
+    }
+  }
+
   // Toggle categoría expandida
   const handleToggleCategory = (categoria) => {
     setExpandedCategories(prev => {
@@ -634,15 +693,31 @@ const MapeoNovedadesModal = ({
       size="full"
     >
       <div className="max-h-[75vh] overflow-y-auto -mx-6 px-6">
-        {/* Loading */}
-        {isLoading && (
+        {/* Estado de procesamiento */}
+        {procesando && (
+          <div className="flex flex-col items-center justify-center py-12">
+            <Loader2 className="h-12 w-12 text-primary-500 animate-spin mb-4" />
+            <p className="text-secondary-200 text-lg mb-2">Procesando novedades...</p>
+            <p className="text-secondary-400 text-sm">
+              Creando registros de novedades. Esto puede tomar unos segundos.
+            </p>
+            {archivoPolling && (
+              <p className="text-secondary-500 text-xs mt-2">
+                Estado: {archivoPolling.estado}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Loading inicial */}
+        {!procesando && isLoading && (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 text-primary-500 animate-spin" />
             <span className="ml-3 text-secondary-400">Cargando datos...</span>
           </div>
         )}
 
-        {!isLoading && (
+        {!procesando && !isLoading && (
           <>
             {/* Tabs */}
             <div className="flex gap-2 mb-4 border-b border-secondary-700 pb-2">
@@ -951,11 +1026,15 @@ const MapeoNovedadesModal = ({
 
       {/* Footer */}
       <Modal.Footer>
-        <Button variant="secondary" onClick={onClose}>
-          Cerrar
+        <Button 
+          variant="secondary" 
+          onClick={onClose}
+          disabled={procesando}
+        >
+          {procesando ? 'Procesando...' : 'Cerrar'}
         </Button>
         
-        {hayMapeosPendientes && activeTab === 'pendientes' && (
+        {!procesando && hayMapeosPendientes && activeTab === 'pendientes' && (
           <Button
             variant="primary"
             onClick={handleGuardar}
@@ -976,10 +1055,10 @@ const MapeoNovedadesModal = ({
           </Button>
         )}
 
-        {puedeProcesar && (
+        {!procesando && puedeProcesar && (
           <Button
             variant="primary"
-            onClick={() => procesarMutation.mutate()}
+            onClick={handleProcesar}
             disabled={procesarMutation.isPending}
             className="flex items-center gap-2"
           >

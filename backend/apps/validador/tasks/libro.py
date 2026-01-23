@@ -8,6 +8,7 @@ Tareas:
 
 import logging
 from celery import shared_task
+from celery.exceptions import SoftTimeLimitExceeded
 from django.core.cache import cache
 
 from shared.audit import audit_action_celery
@@ -16,7 +17,7 @@ from apps.core.constants import AccionAudit
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, name='validador.extraer_headers_libro')
+@shared_task(bind=True, name='validador.extraer_headers_libro', soft_time_limit=60, time_limit=90)
 def extraer_headers_libro(self, archivo_erp_id: int, usuario_id: int = None):
     """
     Tarea Celery para extraer headers del Libro de Remuneraciones.
@@ -27,6 +28,10 @@ def extraer_headers_libro(self, archivo_erp_id: int, usuario_id: int = None):
     Args:
         archivo_erp_id: ID del ArchivoERP
         usuario_id: ID del usuario que inició la tarea (para auditoría)
+    
+    Timeouts:
+        soft_time_limit: 1 min (warning)
+        time_limit: 1.5 min (kill)
     
     Returns:
         dict con:
@@ -85,7 +90,7 @@ def extraer_headers_libro(self, archivo_erp_id: int, usuario_id: int = None):
         }
 
 
-@shared_task(bind=True, name='validador.procesar_libro_remuneraciones')
+@shared_task(bind=True, name='validador.procesar_libro_remuneraciones', soft_time_limit=600, time_limit=720)
 def procesar_libro_remuneraciones(self, archivo_erp_id: int, usuario_id: int = None, ip_address: str = None):
     """
     Tarea Celery para procesar el Libro de Remuneraciones completo.
@@ -99,6 +104,10 @@ def procesar_libro_remuneraciones(self, archivo_erp_id: int, usuario_id: int = N
         archivo_erp_id: ID del ArchivoERP
         usuario_id: ID del usuario que inició la tarea (para auditoría)
         ip_address: IP del cliente que inició la tarea (para auditoría)
+    
+    Timeouts:
+        soft_time_limit: 10 min (warning)
+        time_limit: 12 min (kill)
     
     Returns:
         dict con:

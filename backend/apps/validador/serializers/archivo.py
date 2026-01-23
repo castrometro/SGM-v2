@@ -44,12 +44,16 @@ class ArchivoERPUploadSerializer(serializers.ModelSerializer):
         fields = ['cierre', 'tipo', 'archivo']
     
     def validate_archivo(self, value):
-        # Validar extensión
-        ext = value.name.split('.')[-1].lower()
-        if ext not in ['xlsx', 'xls', 'csv']:
-            raise serializers.ValidationError(
-                "Formato de archivo no soportado. Use .xlsx, .xls o .csv"
-            )
+        from apps.validador.services import ArchivoService
+        
+        # Validar usando el servicio centralizado
+        error = ArchivoService.validar_archivo(
+            value, 
+            tipo=self.initial_data.get('tipo', ''),
+            es_erp=True
+        )
+        if error:
+            raise serializers.ValidationError(error)
         return value
     
     def create(self, validated_data):
@@ -91,11 +95,16 @@ class ArchivoAnalistaUploadSerializer(serializers.ModelSerializer):
         fields = ['cierre', 'tipo', 'archivo']
     
     def validate_archivo(self, value):
-        ext = value.name.split('.')[-1].lower()
-        if ext not in ['xlsx', 'xls', 'csv']:
-            raise serializers.ValidationError(
-                "Formato de archivo no soportado. Use .xlsx, .xls o .csv"
-            )
+        from apps.validador.services import ArchivoService
+        
+        # Validar usando el servicio centralizado
+        error = ArchivoService.validar_archivo(
+            value,
+            tipo=self.initial_data.get('tipo', ''),
+            es_erp=False
+        )
+        if error:
+            raise serializers.ValidationError(error)
         return value
     
     def create(self, validated_data):

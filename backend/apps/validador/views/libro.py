@@ -269,12 +269,14 @@ class LibroViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
     
-    @action(detail=False, methods=['post'], url_path='(?P<archivo_id>[^/.]+)/procesar')
+    @action(detail=False, methods=['post'], url_path='(?P<archivo_id>[^/.]+)/procesar', throttle_scope='procesamiento')
     def procesar(self, request, archivo_id=None):
         """
         Inicia el procesamiento completo del libro (tarea asíncrona).
         
         POST /api/v1/validador/libro/{archivo_id}/procesar/
+        
+        Rate limit: 10/hour por usuario (scope: procesamiento)
         
         Response:
             {
