@@ -693,10 +693,20 @@ def _verificar_mapeo_pendiente(cierre):
     """Verifica si hay items de novedades pendientes de mapear."""
     from apps.validador.models import RegistroNovedades
     
+    # Items sin concepto_novedades asignado, o con concepto sin mapeo a libro
     sin_mapear = RegistroNovedades.objects.filter(
         cierre=cierre,
-        mapeo__isnull=True
+        concepto_novedades__isnull=True
     ).values('nombre_item').distinct().count()
     
-    cierre.requiere_mapeo = sin_mapear > 0
+    # También contar conceptos sin mapeo a libro (excepto sin_asignacion)
+    from apps.validador.models import ConceptoNovedades
+    conceptos_sin_mapear = ConceptoNovedades.objects.filter(
+        cliente=cierre.cliente,
+        activo=True,
+        concepto_libro__isnull=True,
+        sin_asignacion=False
+    ).count()
+    
+    cierre.requiere_mapeo = (sin_mapear + conceptos_sin_mapear) > 0
     cierre.save()
