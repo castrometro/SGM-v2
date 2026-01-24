@@ -344,7 +344,7 @@ class MapeoItemNovedadesViewSet(viewsets.ModelViewSet):
             ]
         })
     
-    @action(detail=False, methods=['post'], throttle_scope='bulk')
+    @action(detail=False, methods=['post'])
     def mapear_batch(self, request):
         """
         Mapear múltiples ConceptoNovedades a ConceptoLibro o marcar sin_asignacion.
@@ -497,7 +497,7 @@ class MapeoItemNovedadesViewSet(viewsets.ModelViewSet):
             'estado_archivo': estado_archivo,
         })
     
-    @action(detail=False, methods=['post'], throttle_scope='bulk')
+    @action(detail=False, methods=['post'])
     def desmapear(self, request):
         """
         Quitar mapeo de conceptos de novedades.

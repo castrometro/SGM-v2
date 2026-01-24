@@ -20,6 +20,7 @@ from .models import (
     ComentarioIncidencia,
     ResumenConsolidado,
     ResumenCategoria,
+    MovimientoMes,
 )
 
 
@@ -237,3 +238,40 @@ class ResumenConsolidadoAdmin(admin.ModelAdmin):
 class ResumenCategoriaAdmin(admin.ModelAdmin):
     list_display = ['cierre', 'categoria', 'total_monto', 'cantidad_conceptos']
     list_filter = ['categoria', 'cierre__cliente']
+
+
+@admin.register(MovimientoMes)
+class MovimientoMesAdmin(admin.ModelAdmin):
+    list_display = [
+        'rut', 'nombre', 'tipo', 'fecha_inicio', 'fecha_fin', 
+        'dias', 'tipo_contrato', 'hoja_origen', 'cierre_info'
+    ]
+    list_filter = ['tipo', 'hoja_origen', 'cierre__cliente', 'cierre__periodo']
+    search_fields = ['rut', 'nombre', 'causal']
+    raw_id_fields = ['cierre', 'archivo_erp']
+    readonly_fields = ['datos_raw']
+    list_per_page = 50
+    list_select_related = ['cierre', 'cierre__cliente', 'archivo_erp']
+    
+    fieldsets = (
+        (None, {
+            'fields': ('cierre', 'archivo_erp', 'tipo', 'hoja_origen')
+        }),
+        ('Empleado', {
+            'fields': ('rut', 'nombre')
+        }),
+        ('Fechas y Duración', {
+            'fields': ('fecha_inicio', 'fecha_fin', 'dias')
+        }),
+        ('Detalles', {
+            'fields': ('tipo_contrato', 'causal', 'tipo_licencia')
+        }),
+        ('Datos Raw', {
+            'fields': ('datos_raw',),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    @admin.display(description='Cierre')
+    def cierre_info(self, obj):
+        return f"{obj.cierre.cliente.razon_social} - {obj.cierre.periodo}"

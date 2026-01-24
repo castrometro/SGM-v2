@@ -277,7 +277,7 @@ class ArchivoAnalistaViewSet(viewsets.ModelViewSet):
             'archivo_id': archivo.id,
         })
     
-    @action(detail=True, methods=['post'], throttle_scope='procesamiento')
+    @action(detail=True, methods=['post'])
     def procesar(self, request, pk=None):
         """
         Procesa el archivo de novedades creando RegistroNovedades.

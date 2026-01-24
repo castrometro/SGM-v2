@@ -269,7 +269,7 @@ class LibroViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
     
-    @action(detail=False, methods=['post'], url_path='(?P<archivo_id>[^/.]+)/procesar', throttle_scope='procesamiento')
+    @action(detail=False, methods=['post'], url_path='(?P<archivo_id>[^/.]+)/procesar')
     def procesar(self, request, archivo_id=None):
         """
         Inicia el procesamiento completo del libro (tarea asíncrona).

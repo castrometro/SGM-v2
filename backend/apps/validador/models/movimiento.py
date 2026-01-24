@@ -28,6 +28,15 @@ class MovimientoMes(models.Model):
         related_name='movimientos_erp'
     )
     
+    archivo_erp = models.ForeignKey(
+        'ArchivoERP',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='movimientos',
+        help_text="Archivo ERP del cual se extrajo este movimiento"
+    )
+    
     tipo = models.CharField(
         max_length=20,
         choices=TIPO_CHOICES
@@ -45,9 +54,15 @@ class MovimientoMes(models.Model):
     dias = models.PositiveIntegerField(null=True, blank=True)
     
     # Información adicional según tipo
-    # Para bajas: causal
+    # Para altas/bajas: tipo de contrato
+    tipo_contrato = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Tipo de contrato: Plazo Fijo, Indefinido, etc."
+    )
+    # Para bajas: causal/motivo
     causal = models.CharField(max_length=200, blank=True)
-    # Para licencias: tipo de licencia
+    # Para licencias/permisos: subtipo
     tipo_licencia = models.CharField(max_length=100, blank=True)
     
     # Datos crudos del Excel
