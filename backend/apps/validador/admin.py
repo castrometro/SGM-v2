@@ -21,6 +21,7 @@ from .models import (
     ResumenConsolidado,
     ResumenCategoria,
     MovimientoMes,
+    MovimientoAnalista,
 )
 
 
@@ -275,3 +276,46 @@ class MovimientoMesAdmin(admin.ModelAdmin):
     @admin.display(description='Cierre')
     def cierre_info(self, obj):
         return f"{obj.cierre.cliente.razon_social} - {obj.cierre.periodo}"
+
+
+@admin.register(MovimientoAnalista)
+class MovimientoAnalistaAdmin(admin.ModelAdmin):
+    list_display = [
+        'rut', 'nombre', 'tipo', 'origen', 'fecha_inicio', 'fecha_fin',
+        'dias', 'causal_truncada', 'cierre_info'
+    ]
+    list_filter = ['tipo', 'origen', 'cierre__cliente', 'cierre__periodo']
+    search_fields = ['rut', 'nombre', 'causal']
+    raw_id_fields = ['cierre', 'archivo_analista']
+    readonly_fields = ['datos_raw']
+    list_per_page = 50
+    list_select_related = ['cierre', 'cierre__cliente', 'archivo_analista']
+    
+    fieldsets = (
+        (None, {
+            'fields': ('cierre', 'archivo_analista', 'tipo', 'origen')
+        }),
+        ('Empleado', {
+            'fields': ('rut', 'nombre')
+        }),
+        ('Fechas y Duración', {
+            'fields': ('fecha_inicio', 'fecha_fin', 'dias')
+        }),
+        ('Detalles', {
+            'fields': ('causal', 'tipo_ausentismo')
+        }),
+        ('Datos Raw', {
+            'fields': ('datos_raw',),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    @admin.display(description='Cierre')
+    def cierre_info(self, obj):
+        return f"{obj.cierre.cliente.razon_social} - {obj.cierre.periodo}"
+    
+    @admin.display(description='Causal')
+    def causal_truncada(self, obj):
+        if obj.causal and len(obj.causal) > 30:
+            return obj.causal[:30] + '...'
+        return obj.causal or '-'

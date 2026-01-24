@@ -1,11 +1,30 @@
 """
 Celery Tasks para procesamiento de Archivos del Analista.
+
+Procesa archivos del cliente (no dependen del ERP):
+- Novedades: Items/conceptos con montos
+- Ingresos: Altas de personal  
+- Finiquitos: Bajas de personal
+- Ausentismos: Licencias, permisos, vacaciones
+
+Seguridad:
+- Validación de rutas (CWE-22 path traversal)
+- Enmascaramiento de PII en logs (Ley 21.719)
+- Sanitización de datos JSON
 """
 
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
 from django.utils import timezone
 import logging
+
+from apps.validador.utils import (
+    normalizar_rut,
+    mask_rut,
+    parse_fecha,
+    sanitizar_datos_raw,
+    validar_ruta_archivo,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +110,10 @@ def extraer_headers_novedades(self, archivo_id, usuario_id=None):
         if archivo.tipo != 'novedades':
             raise ValueError(f"Archivo no es de tipo novedades: {archivo.tipo}")
         
+        # Validar ruta del archivo (seguridad: path traversal)
+        if not validar_ruta_archivo(archivo.archivo.path):
+            raise ValueError("Ruta de archivo no permitida")
+        
         archivo.estado = EstadoArchivoNovedades.EXTRAYENDO_HEADERS
         archivo.save()
         
@@ -102,7 +125,7 @@ def extraer_headers_novedades(self, archivo_id, usuario_id=None):
         # Obtener ERP activo del cliente (desde configuraciones_erp)
         config_erp = cliente.configuraciones_erp.filter(activo=True).select_related('erp').first()
         if not config_erp:
-            raise ValueError(f"Cliente {cliente.rut} no tiene ERP activo configurado")
+            raise ValueError(f"Cliente {mask_rut(cliente.rut)} no tiene ERP activo configurado")
         erp = config_erp.erp
         
         # Leer archivo
@@ -223,6 +246,10 @@ def procesar_archivo_analista(self, archivo_id, usuario_id=None):
     
     try:
         archivo = ArchivoAnalista.objects.select_related('cierre').get(id=archivo_id)
+        
+        # Validar ruta del archivo (seguridad: path traversal)
+        if not validar_ruta_archivo(archivo.archivo.path):
+            raise ValueError("Ruta de archivo no permitida")
         
         # Validar estado para novedades: debe estar LISTO
         if archivo.tipo == 'novedades':
@@ -387,7 +414,16 @@ def _procesar_novedades(archivo):
 
 
 def _procesar_asistencias(archivo):
-    """Procesa el archivo de Asistencias."""
+    """
+    Procesa el archivo de Ausentismos del analista.
+    
+    Formato esperado (headers en fila 1):
+    - Rut
+    - Nombre
+    - Fecha Inicio Ausencia
+    - Fecha Fin Ausencia
+    - Tipo Ausentismo
+    """
     import pandas as pd
     from apps.validador.models import MovimientoAnalista
     
@@ -398,55 +434,115 @@ def _procesar_asistencias(archivo):
     
     cierre = archivo.cierre
     
-    rut_col = next((col for col in df.columns if 'rut' in col.lower()), None)
-    if not rut_col:
+    # Mapeo de columnas (case-insensitive)
+    col_map = {}
+    for col in df.columns:
+        col_lower = col.lower().strip()
+        if 'rut' in col_lower:
+            col_map['rut'] = col
+        elif 'nombre' in col_lower:
+            col_map['nombre'] = col
+        elif 'inicio' in col_lower and ('fecha' in col_lower or 'ausencia' in col_lower):
+            col_map['fecha_inicio'] = col
+        elif 'fin' in col_lower and ('fecha' in col_lower or 'ausencia' in col_lower):
+            col_map['fecha_fin'] = col
+        elif 'tipo' in col_lower and 'ausentismo' in col_lower:
+            col_map['tipo_ausentismo'] = col
+    
+    if 'rut' not in col_map:
         raise ValueError("No se encontró columna de RUT")
     
-    registros_creados = 0
+    # Eliminar movimientos anteriores de este archivo (para re-procesamiento)
+    MovimientoAnalista.objects.filter(archivo_analista=archivo).delete()
     
-    for _, row in df.iterrows():
-        rut = str(row[rut_col]).strip()
-        if not rut or rut == 'nan':
+    # Mapeo de tipo ausentismo -> tipo movimiento
+    MAPEO_TIPO = {
+        'licencia': 'licencia',
+        'licencia medica': 'licencia',
+        'licencia médica': 'licencia',
+        'licencia maternal': 'licencia',
+        'vacacion': 'vacaciones',
+        'vacaciones': 'vacaciones',
+        'permiso': 'permiso',
+        'permiso con goce': 'permiso',
+        'permiso sin goce': 'permiso',
+        'ausencia': 'ausencia',
+        'ausencia no justificada': 'ausencia',
+        'ausencia injustificada': 'ausencia',
+        'falta': 'ausencia',
+    }
+    
+    movimientos = []
+    filas_procesadas = 0
+    filas_omitidas = 0
+    
+    for idx, row in df.iterrows():
+        rut_raw = row.get(col_map['rut'], '')
+        rut = normalizar_rut(rut_raw)
+        if not rut:
+            filas_omitidas += 1
             continue
         
-        # Detectar tipo de movimiento por columnas presentes
-        nombre_col = next((col for col in df.columns if 'nombre' in col.lower()), None)
-        tipo_col = next((col for col in df.columns if 'tipo' in col.lower()), None)
-        dias_col = next((col for col in df.columns if 'dias' in col.lower() or 'día' in col.lower()), None)
+        nombre = str(row.get(col_map.get('nombre', ''), '')).strip()
+        if nombre == 'nan':
+            nombre = ''
         
-        nombre = str(row[nombre_col]).strip() if nombre_col else ''
-        tipo_str = str(row[tipo_col]).lower() if tipo_col and pd.notna(row[tipo_col]) else ''
+        # Parsear fechas
+        fecha_inicio = parse_fecha(row.get(col_map.get('fecha_inicio')))
+        fecha_fin = parse_fecha(row.get(col_map.get('fecha_fin')))
         
-        # Mapear tipo
-        if 'licencia' in tipo_str:
-            tipo = 'licencia'
-        elif 'vacacion' in tipo_str:
-            tipo = 'vacaciones'
-        elif 'permiso' in tipo_str:
-            tipo = 'permiso'
-        elif 'ausencia' in tipo_str or 'falta' in tipo_str:
-            tipo = 'ausencia'
-        else:
-            tipo = 'otro'
+        # Tipo ausentismo
+        tipo_ausentismo_raw = str(row.get(col_map.get('tipo_ausentismo', ''), '')).strip()
+        tipo_ausentismo_lower = tipo_ausentismo_raw.lower()
         
-        dias = int(row[dias_col]) if dias_col and pd.notna(row[dias_col]) else None
+        # Determinar tipo de movimiento
+        tipo = 'otro'
+        for key, value in MAPEO_TIPO.items():
+            if key in tipo_ausentismo_lower:
+                tipo = value
+                break
         
-        MovimientoAnalista.objects.create(
+        # Calcular días si hay fechas
+        dias = None
+        if fecha_inicio and fecha_fin:
+            dias = (fecha_fin - fecha_inicio).days + 1
+        
+        # Sanitizar datos_raw
+        datos_raw = sanitizar_datos_raw(row.to_dict())
+        
+        movimientos.append(MovimientoAnalista(
             cierre=cierre,
+            archivo_analista=archivo,
             tipo=tipo,
             origen='asistencias',
             rut=rut,
             nombre=nombre,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
             dias=dias,
-            datos_raw=row.to_dict(),
-        )
-        registros_creados += 1
+            tipo_ausentismo=tipo_ausentismo_raw,
+            datos_raw=datos_raw,
+        ))
+        filas_procesadas += 1
     
-    return {'filas': registros_creados}
+    # Bulk create
+    if movimientos:
+        MovimientoAnalista.objects.bulk_create(movimientos)
+    
+    logger.info(f"Ausentismos procesados: {filas_procesadas}, omitidas: {filas_omitidas}")
+    return {'filas': filas_procesadas, 'omitidas': filas_omitidas}
 
 
 def _procesar_finiquitos(archivo):
-    """Procesa el archivo de Finiquitos."""
+    """
+    Procesa el archivo de Finiquitos del analista.
+    
+    Formato esperado (headers en fila 1):
+    - Rut
+    - Nombre
+    - Fecha Retiro
+    - Motivo
+    """
     import pandas as pd
     from apps.validador.models import MovimientoAnalista
     
@@ -457,40 +553,77 @@ def _procesar_finiquitos(archivo):
     
     cierre = archivo.cierre
     
-    rut_col = next((col for col in df.columns if 'rut' in col.lower()), None)
-    if not rut_col:
+    # Mapeo de columnas (case-insensitive)
+    col_map = {}
+    for col in df.columns:
+        col_lower = col.lower().strip()
+        if 'rut' in col_lower:
+            col_map['rut'] = col
+        elif 'nombre' in col_lower:
+            col_map['nombre'] = col
+        elif 'fecha' in col_lower and 'retiro' in col_lower:
+            col_map['fecha_retiro'] = col
+        elif 'motivo' in col_lower or 'causal' in col_lower:
+            col_map['motivo'] = col
+    
+    if 'rut' not in col_map:
         raise ValueError("No se encontró columna de RUT")
     
-    registros_creados = 0
+    # Eliminar movimientos anteriores de este archivo
+    MovimientoAnalista.objects.filter(archivo_analista=archivo).delete()
     
-    for _, row in df.iterrows():
-        rut = str(row[rut_col]).strip()
-        if not rut or rut == 'nan':
+    movimientos = []
+    filas_procesadas = 0
+    filas_omitidas = 0
+    
+    for idx, row in df.iterrows():
+        rut_raw = row.get(col_map['rut'], '')
+        rut = normalizar_rut(rut_raw)
+        if not rut:
+            filas_omitidas += 1
             continue
         
-        nombre_col = next((col for col in df.columns if 'nombre' in col.lower()), None)
-        causal_col = next((col for col in df.columns if 'causal' in col.lower() or 'motivo' in col.lower()), None)
-        fecha_col = next((col for col in df.columns if 'fecha' in col.lower()), None)
+        nombre = str(row.get(col_map.get('nombre', ''), '')).strip()
+        if nombre == 'nan':
+            nombre = ''
         
-        nombre = str(row[nombre_col]).strip() if nombre_col else ''
-        causal = str(row[causal_col]).strip() if causal_col and pd.notna(row[causal_col]) else ''
+        fecha_retiro = parse_fecha(row.get(col_map.get('fecha_retiro')))
         
-        MovimientoAnalista.objects.create(
+        causal = str(row.get(col_map.get('motivo', ''), '')).strip()
+        if causal == 'nan':
+            causal = ''
+        
+        datos_raw = sanitizar_datos_raw(row.to_dict())
+        
+        movimientos.append(MovimientoAnalista(
             cierre=cierre,
+            archivo_analista=archivo,
             tipo='baja',
             origen='finiquitos',
             rut=rut,
             nombre=nombre,
+            fecha_fin=fecha_retiro,  # fecha_fin = fecha de retiro
             causal=causal,
-            datos_raw=row.to_dict(),
-        )
-        registros_creados += 1
+            datos_raw=datos_raw,
+        ))
+        filas_procesadas += 1
     
-    return {'filas': registros_creados}
+    if movimientos:
+        MovimientoAnalista.objects.bulk_create(movimientos)
+    
+    logger.info(f"Finiquitos procesados: {filas_procesadas}, omitidas: {filas_omitidas}")
+    return {'filas': filas_procesadas, 'omitidas': filas_omitidas}
 
 
 def _procesar_ingresos(archivo):
-    """Procesa el archivo de Ingresos."""
+    """
+    Procesa el archivo de Ingresos del analista.
+    
+    Formato esperado (headers en fila 1):
+    - Rut
+    - Nombre
+    - Fecha Ingreso
+    """
     import pandas as pd
     from apps.validador.models import MovimientoAnalista
     
@@ -501,33 +634,59 @@ def _procesar_ingresos(archivo):
     
     cierre = archivo.cierre
     
-    rut_col = next((col for col in df.columns if 'rut' in col.lower()), None)
-    if not rut_col:
+    # Mapeo de columnas (case-insensitive)
+    col_map = {}
+    for col in df.columns:
+        col_lower = col.lower().strip()
+        if 'rut' in col_lower:
+            col_map['rut'] = col
+        elif 'nombre' in col_lower:
+            col_map['nombre'] = col
+        elif 'fecha' in col_lower and 'ingreso' in col_lower:
+            col_map['fecha_ingreso'] = col
+    
+    if 'rut' not in col_map:
         raise ValueError("No se encontró columna de RUT")
     
-    registros_creados = 0
+    # Eliminar movimientos anteriores de este archivo
+    MovimientoAnalista.objects.filter(archivo_analista=archivo).delete()
     
-    for _, row in df.iterrows():
-        rut = str(row[rut_col]).strip()
-        if not rut or rut == 'nan':
+    movimientos = []
+    filas_procesadas = 0
+    filas_omitidas = 0
+    
+    for idx, row in df.iterrows():
+        rut_raw = row.get(col_map['rut'], '')
+        rut = normalizar_rut(rut_raw)
+        if not rut:
+            filas_omitidas += 1
             continue
         
-        nombre_col = next((col for col in df.columns if 'nombre' in col.lower()), None)
-        fecha_col = next((col for col in df.columns if 'fecha' in col.lower()), None)
+        nombre = str(row.get(col_map.get('nombre', ''), '')).strip()
+        if nombre == 'nan':
+            nombre = ''
         
-        nombre = str(row[nombre_col]).strip() if nombre_col else ''
+        fecha_ingreso = parse_fecha(row.get(col_map.get('fecha_ingreso')))
         
-        MovimientoAnalista.objects.create(
+        datos_raw = sanitizar_datos_raw(row.to_dict())
+        
+        movimientos.append(MovimientoAnalista(
             cierre=cierre,
+            archivo_analista=archivo,
             tipo='alta',
             origen='ingresos',
             rut=rut,
             nombre=nombre,
-            datos_raw=row.to_dict(),
-        )
-        registros_creados += 1
+            fecha_inicio=fecha_ingreso,  # fecha_inicio = fecha de ingreso
+            datos_raw=datos_raw,
+        ))
+        filas_procesadas += 1
     
-    return {'filas': registros_creados}
+    if movimientos:
+        MovimientoAnalista.objects.bulk_create(movimientos)
+    
+    logger.info(f"Ingresos procesados: {filas_procesadas}, omitidas: {filas_omitidas}")
+    return {'filas': filas_procesadas, 'omitidas': filas_omitidas}
 
 
 def _verificar_mapeo_pendiente(cierre):

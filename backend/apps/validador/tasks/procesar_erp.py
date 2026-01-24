@@ -1,5 +1,14 @@
 """
 Celery Tasks para procesamiento de Archivos ERP.
+
+Procesa archivos que dependen del ERP (Strategy pattern):
+- Libro de Remuneraciones
+- Movimientos del Mes
+
+Seguridad:
+- Validación de rutas (CWE-22 path traversal)
+- Enmascaramiento de PII en logs (Ley 21.719)
+- Sanitización de datos JSON
 """
 
 from celery import shared_task
@@ -10,45 +19,13 @@ from pathlib import Path
 import logging
 import os
 
+from apps.validador.utils import (
+    mask_rut,
+    sanitizar_datos_raw,
+    validar_ruta_archivo,
+)
+
 logger = logging.getLogger(__name__)
-
-
-def _validar_ruta_archivo(file_path: str) -> bool:
-    """
-    Valida que la ruta del archivo esté dentro de MEDIA_ROOT.
-    Previene ataques de path traversal (CWE-22).
-    
-    Args:
-        file_path: Ruta del archivo a validar
-        
-    Returns:
-        True si la ruta es segura, False si es sospechosa
-    """
-    try:
-        # Resolver rutas a absolutas y canonicalizadas
-        media_root = Path(settings.MEDIA_ROOT).resolve()
-        archivo_path = Path(file_path).resolve()
-        
-        # Verificar que el archivo está dentro de MEDIA_ROOT
-        return str(archivo_path).startswith(str(media_root))
-    except Exception:
-        return False
-
-
-def _mask_rut(rut: str) -> str:
-    """
-    Enmascara RUT para logs, mostrando solo últimos 4 caracteres.
-    Protege PII según Ley 21.719.
-    
-    Args:
-        rut: RUT completo (ej: "12345678-9")
-        
-    Returns:
-        RUT enmascarado (ej: "****78-9")
-    """
-    if not rut or len(rut) < 5:
-        return "****"
-    return f"****{rut[-4:]}"
 
 
 @shared_task(bind=True, max_retries=3, soft_time_limit=600, time_limit=720)
@@ -78,7 +55,7 @@ def procesar_archivo_erp(self, archivo_id, usuario_id=None):
         archivo.save()
         
         # Validar que la ruta del archivo sea segura (prevenir path traversal)
-        if not _validar_ruta_archivo(archivo.archivo.path):
+        if not validar_ruta_archivo(archivo.archivo.path):
             raise ValueError("Ruta de archivo no válida o fuera del directorio permitido")
         
         logger.info(f"Procesando archivo ERP ID={archivo_id}, tipo={archivo.tipo}")

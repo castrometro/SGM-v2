@@ -104,6 +104,15 @@ class MovimientoAnalista(models.Model):
         related_name='movimientos_analista'
     )
     
+    archivo_analista = models.ForeignKey(
+        'ArchivoAnalista',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='movimientos',
+        help_text="Archivo del analista del cual se extrajo este movimiento"
+    )
+    
     tipo = models.CharField(
         max_length=20,
         choices=TIPO_CHOICES
@@ -126,6 +135,11 @@ class MovimientoAnalista(models.Model):
     
     # Información adicional
     causal = models.CharField(max_length=200, blank=True)
+    tipo_ausentismo = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Tipo de ausentismo original del archivo"
+    )
     
     # Datos crudos
     datos_raw = models.JSONField(default=dict, blank=True)
