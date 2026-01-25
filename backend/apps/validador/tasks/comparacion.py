@@ -11,6 +11,7 @@ Reporta progreso a cache para polling desde frontend.
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
 from django.core.cache import cache
+from django.db import models
 from django.utils import timezone
 from decimal import Decimal
 import logging
@@ -195,10 +196,15 @@ def _comparar_libro_novedades(cierre, cierre_id):
     - falta_en_erp: Item en Novedades pero no en Libro
     - falta_en_cliente: Item en Libro pero no en Novedades
     - item_no_mapeado: Item en Novedades sin mapeo a concepto ERP
+    
+    Relación de modelos:
+    - RegistroNovedades.concepto_novedades → ConceptoNovedades
+    - ConceptoNovedades.concepto_libro → ConceptoLibro (usado para comparar)
+    - RegistroLibro.concepto → ConceptoLibro (directo)
     """
     from apps.validador.models import (
-        RegistroConcepto,
         RegistroNovedades,
+        RegistroLibro,
         Discrepancia,
     )
     
@@ -210,15 +216,17 @@ def _comparar_libro_novedades(cierre, cierre_id):
     
     discrepancias_creadas = 0
     
-    # Obtener todos los registros de novedades con mapeo
+    # Obtener todos los registros de novedades con mapeo completo
+    # concepto_novedades debe existir y tener concepto_libro asignado
     novedades_mapeadas = RegistroNovedades.objects.filter(
         cierre=cierre,
-        mapeo__isnull=False
-    ).select_related('mapeo', 'mapeo__concepto_erp')
+        concepto_novedades__isnull=False,
+        concepto_novedades__concepto_libro__isnull=False,
+    ).select_related('concepto_novedades', 'concepto_novedades__concepto_libro')
     
     total_novedades = novedades_mapeadas.count()
     
-    # Agrupar novedades por (rut, concepto_erp)
+    # Agrupar novedades por (rut, concepto_libro_id)
     novedades_por_empleado_concepto = {}
     for idx, novedad in enumerate(novedades_mapeadas):
         # Actualizar progreso cada 100 registros
@@ -231,25 +239,32 @@ def _comparar_libro_novedades(cierre, cierre_id):
                 'mensaje': f'Procesando novedades: {idx}/{total_novedades}',
             })
         
-        key = (novedad.rut_empleado, novedad.mapeo.concepto_erp_id)
+        # La clave es (rut, concepto_libro_id) para poder comparar con RegistroConcepto
+        concepto_libro = novedad.concepto_novedades.concepto_libro
+        key = (novedad.rut_empleado, concepto_libro.id)
         if key not in novedades_por_empleado_concepto:
             novedades_por_empleado_concepto[key] = {
                 'monto': Decimal('0'),
                 'nombre_empleado': novedad.nombre_empleado,
-                'concepto': novedad.mapeo.concepto_erp,
+                'concepto': concepto_libro,
             }
         novedades_por_empleado_concepto[key]['monto'] += Decimal(str(novedad.monto))
     
-    # Obtener registros del libro (solo conceptos que se comparan)
-    registros_libro = RegistroConcepto.objects.filter(
-        empleado__cierre=cierre
-    ).select_related('empleado', 'concepto', 'concepto__categoria')
+    # Obtener registros del libro (desde RegistroLibro - capa Bronce)
+    # RegistroLibro.concepto -> ConceptoLibro (mismo que ConceptoNovedades.concepto_libro)
+    from apps.validador.models import RegistroLibro
     
-    # Crear diccionario de libro por (rut, concepto)
+    registros_libro = RegistroLibro.objects.filter(
+        cierre=cierre
+    ).select_related('empleado', 'concepto')
+    
+    # Crear diccionario de libro por (rut, concepto_libro_id)
     libro_por_empleado_concepto = {}
     for registro in registros_libro:
-        # Verificar si el concepto se compara
-        if not registro.concepto.se_compara:
+        # La categoría está en concepto.categoria (string)
+        # Solo comparamos categorías de montos (no info_adicional ni ignorar)
+        categoria = registro.concepto.categoria
+        if categoria in ('info_adicional', 'ignorar'):
             continue
         
         key = (registro.empleado.rut, registro.concepto_id)
@@ -272,20 +287,23 @@ def _comparar_libro_novedades(cierre, cierre_id):
     
     # Items en novedades que no coinciden con libro
     for key, datos_novedad in novedades_por_empleado_concepto.items():
-        rut, concepto_id = key
+        rut, concepto_libro_id = key
         datos_libro = libro_por_empleado_concepto.get(key)
         
         if not datos_libro:
             # El item está en novedades pero no en libro
+            concepto = datos_novedad['concepto']
             discrepancias_batch.append(Discrepancia(
                 cierre=cierre,
                 tipo='falta_en_erp',
                 origen='libro_vs_novedades',
                 rut_empleado=rut,
                 nombre_empleado=datos_novedad['nombre_empleado'],
-                concepto=datos_novedad['concepto'],
+                # concepto FK es a ConceptoCliente, no ConceptoLibro, así que dejamos null
+                concepto=None,
+                nombre_item=concepto.header_original,
                 monto_cliente=datos_novedad['monto'],
-                descripcion=f"El item '{datos_novedad['concepto'].nombre_erp}' está en Novedades pero no en el Libro"
+                descripcion=f"El item '{concepto.header_original}' está en Novedades pero no en el Libro"
             ))
             discrepancias_creadas += 1
             continue
@@ -293,13 +311,15 @@ def _comparar_libro_novedades(cierre, cierre_id):
         # Comparar montos
         diferencia = datos_libro['monto'] - datos_novedad['monto']
         if abs(diferencia) > tolerancia:
+            concepto = datos_libro['concepto']
             discrepancia = Discrepancia(
                 cierre=cierre,
                 tipo='monto_diferente',
                 origen='libro_vs_novedades',
                 rut_empleado=rut,
                 nombre_empleado=datos_libro['nombre_empleado'],
-                concepto=datos_libro['concepto'],
+                concepto=None,  # FK es a ConceptoCliente
+                nombre_item=concepto.header_original,
                 monto_erp=datos_libro['monto'],
                 monto_cliente=datos_novedad['monto'],
                 diferencia=diferencia,
@@ -318,7 +338,8 @@ def _comparar_libro_novedades(cierre, cierre_id):
     # Items en libro que no están en novedades (que deberían estar)
     for key, datos_libro in libro_por_empleado_concepto.items():
         if key not in novedades_por_empleado_concepto:
-            rut, concepto_id = key
+            rut, concepto_libro_id = key
+            concepto = datos_libro['concepto']
             
             discrepancias_batch.append(Discrepancia(
                 cierre=cierre,
@@ -326,16 +347,22 @@ def _comparar_libro_novedades(cierre, cierre_id):
                 origen='libro_vs_novedades',
                 rut_empleado=rut,
                 nombre_empleado=datos_libro['nombre_empleado'],
-                concepto=datos_libro['concepto'],
+                concepto=None,  # FK es a ConceptoCliente
+                nombre_item=concepto.header_original,
                 monto_erp=datos_libro['monto'],
-                descripcion=f"El item '{datos_libro['concepto'].nombre_erp}' está en el Libro pero no en Novedades"
+                descripcion=f"El item '{concepto.header_original}' está en el Libro pero no en Novedades"
             ))
             discrepancias_creadas += 1
     
     # Items sin mapear (generar discrepancia informativa)
+    # Buscar registros de novedades sin concepto_novedades o donde concepto_novedades no tiene concepto_libro
     items_sin_mapear = RegistroNovedades.objects.filter(
-        cierre=cierre,
-        mapeo__isnull=True
+        cierre=cierre
+    ).filter(
+        models.Q(concepto_novedades__isnull=True) | 
+        models.Q(concepto_novedades__concepto_libro__isnull=True)
+    ).exclude(
+        concepto_novedades__sin_asignacion=True  # Excluir los marcados como "sin asignación"
     ).values('nombre_item').distinct()
     
     for item in items_sin_mapear:

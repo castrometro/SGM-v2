@@ -41,10 +41,16 @@ export const useGenerarDiscrepancias = (cierreId) => {
         return POLLING_INTERVALS.TAREA_CELERY
       }
       // Cuando termina, parar polling e invalidar queries
-      if (data?.estado === 'completado' || data?.estado === 'error') {
+      if (data?.estado === 'completado') {
         setIsGenerating(false)
+        setError(null)
         queryClient.invalidateQueries({ queryKey: ['cierre', cierreId] })
         queryClient.invalidateQueries({ queryKey: ['discrepancias', cierreId] })
+      }
+      if (data?.estado === 'error') {
+        setIsGenerating(false)
+        setError(data.mensaje || 'Error al generar discrepancias')
+        queryClient.invalidateQueries({ queryKey: ['cierre', cierreId] })
       }
       return false
     },
