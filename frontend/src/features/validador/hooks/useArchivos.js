@@ -235,3 +235,80 @@ export const useProgresoLibro = (archivoId, { enabled = true } = {}) => {
     },
   })
 }
+
+/**
+ * Hook para marcar un archivo analista como "No Aplica" para este mes.
+ * 
+ * Crea un registro con estado NO_APLICA indicando que no hay datos
+ * de este tipo para el período.
+ * 
+ * @returns {UseMutationResult} - Mutation para marcar no aplica
+ */
+export const useMarcarNoAplica = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ cierreId, tipo }) => {
+      const { data } = await api.post('/v1/validador/archivos-analista/no-aplica/', {
+        cierre_id: cierreId,
+        tipo,
+      })
+      return data
+    },
+    onSuccess: (_, { cierreId }) => {
+      // Invalidar queries relacionadas
+      queryClient.invalidateQueries({ queryKey: ['archivos-analista', cierreId] })
+      queryClient.invalidateQueries({ queryKey: ['cierre', cierreId] })
+    },
+  })
+}
+
+/**
+ * Hook para desmarcar "No Aplica" de un archivo analista.
+ * 
+ * Permite volver a subir un archivo de este tipo.
+ * 
+ * @returns {UseMutationResult} - Mutation para desmarcar no aplica
+ */
+export const useDesmarcarNoAplica = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ cierreId, tipo }) => {
+      const { data } = await api.post('/v1/validador/archivos-analista/desmarcar-no-aplica/', {
+        cierre_id: cierreId,
+        tipo,
+      })
+      return data
+    },
+    onSuccess: (_, { cierreId }) => {
+      // Invalidar queries relacionadas
+      queryClient.invalidateQueries({ queryKey: ['archivos-analista', cierreId] })
+      queryClient.invalidateQueries({ queryKey: ['cierre', cierreId] })
+    },
+  })
+}
+
+/**
+ * Hook para confirmar que los archivos están listos y pasar al siguiente estado.
+ * 
+ * Transiciona el cierre de CARGA_ARCHIVOS a ARCHIVOS_LISTOS.
+ * Requiere que todos los archivos ERP estén PROCESADOS y todos los archivos
+ * analista estén PROCESADOS o NO_APLICA.
+ * 
+ * @returns {UseMutationResult} - Mutation para confirmar archivos listos
+ */
+export const useConfirmarArchivosListos = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ cierreId }) => {
+      const { data } = await api.post(`/v1/validador/cierres/${cierreId}/confirmar-archivos-listos/`)
+      return data
+    },
+    onSuccess: (_, { cierreId }) => {
+      // Invalidar query del cierre para reflejar nuevo estado
+      queryClient.invalidateQueries({ queryKey: ['cierre', cierreId] })
+    },
+  })
+}

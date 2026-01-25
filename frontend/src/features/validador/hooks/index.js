@@ -9,6 +9,9 @@ export {
   useDeleteArchivoERP,
   useDeleteArchivoAnalista,
   useProgresoLibro,
+  useMarcarNoAplica,
+  useDesmarcarNoAplica,
+  useConfirmarArchivosListos,
   TIPOS_ERP,
   TIPOS_ANALISTA,
 } from './useArchivos'

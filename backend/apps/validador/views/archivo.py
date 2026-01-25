@@ -15,9 +15,10 @@ from ..serializers import (
     ArchivoAnalistaSerializer,
     ArchivoAnalistaUploadSerializer,
 )
-from ..constants import TipoArchivoERP, EstadoArchivoLibro, EstadoArchivoNovedades
+from ..constants import TipoArchivoERP, TipoArchivoAnalista, EstadoArchivoLibro, EstadoArchivoNovedades
 from ..tasks import extraer_headers_libro, procesar_archivo_erp, procesar_archivo_analista, extraer_headers_novedades
 from shared.audit import audit_create, audit_delete
+from apps.core.constants import TipoUsuario
 
 
 class ArchivoERPViewSet(viewsets.ModelViewSet):
@@ -335,3 +336,146 @@ class ArchivoAnalistaViewSet(viewsets.ModelViewSet):
             resultado[tipo] = ArchivoAnalistaSerializer(archivo).data if archivo else None
         
         return Response(resultado)
+    
+    @action(detail=False, methods=['post'], url_path='no-aplica')
+    def marcar_no_aplica(self, request):
+        """
+        Marcar un tipo de archivo analista como "No Aplica" para este mes.
+        
+        Crea un registro con estado NO_APLICA indicando que no hay datos
+        de este tipo para el período.
+        
+        Body:
+            cierre_id: ID del cierre
+            tipo: Tipo de archivo (novedades, asistencias, finiquitos, ingresos)
+        """
+        from ..services import ArchivoService
+        
+        cierre_id = request.data.get('cierre_id')
+        tipo = request.data.get('tipo')
+        
+        if not cierre_id or not tipo:
+            return Response(
+                {'error': 'cierre_id y tipo son requeridos'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # SEC-003: Validar tipo contra lista blanca
+        if tipo not in TipoArchivoAnalista.ALL:
+            return Response(
+                {'error': f'Tipo inválido. Valores permitidos: {TipoArchivoAnalista.ALL}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            cierre = Cierre.objects.get(id=cierre_id)
+        except Cierre.DoesNotExist:
+            return Response(
+                {'error': 'Cierre no encontrado'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # SEC-002: Validar que el usuario tiene acceso al cierre
+        if not self._user_can_access_cierre(request.user, cierre):
+            return Response(
+                {'error': 'No tiene permisos para este cierre'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        result = ArchivoService.marcar_no_aplica(
+            cierre=cierre,
+            tipo=tipo,
+            user=request.user
+        )
+        
+        if result.success:
+            return Response({
+                'mensaje': f'Archivo {tipo} marcado como "No Aplica"',
+                'archivo': ArchivoAnalistaSerializer(result.data).data,
+            })
+        else:
+            return Response(
+                {'error': result.error},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=False, methods=['post'], url_path='desmarcar-no-aplica')
+    def desmarcar_no_aplica(self, request):
+        """
+        Eliminar el marcado "No Aplica" de un tipo de archivo.
+        
+        Permite volver a subir un archivo de este tipo.
+        
+        Body:
+            cierre_id: ID del cierre
+            tipo: Tipo de archivo
+        """
+        from ..services import ArchivoService
+        
+        cierre_id = request.data.get('cierre_id')
+        tipo = request.data.get('tipo')
+        
+        if not cierre_id or not tipo:
+            return Response(
+                {'error': 'cierre_id y tipo son requeridos'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # SEC-003: Validar tipo contra lista blanca
+        if tipo not in TipoArchivoAnalista.ALL:
+            return Response(
+                {'error': f'Tipo inválido. Valores permitidos: {TipoArchivoAnalista.ALL}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            cierre = Cierre.objects.get(id=cierre_id)
+        except Cierre.DoesNotExist:
+            return Response(
+                {'error': 'Cierre no encontrado'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # SEC-002: Validar que el usuario tiene acceso al cierre
+        if not self._user_can_access_cierre(request.user, cierre):
+            return Response(
+                {'error': 'No tiene permisos para este cierre'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        result = ArchivoService.desmarcar_no_aplica(
+            cierre=cierre,
+            tipo=tipo,
+            user=request.user
+        )
+        
+        if result.success:
+            return Response({
+                'mensaje': f'Archivo {tipo} desmarcado como "No Aplica"',
+            })
+        else:
+            return Response(
+                {'error': result.error},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    def _user_can_access_cierre(self, user, cierre):
+        """
+        Valida que el usuario tiene acceso al cierre.
+        
+        Reglas:
+        - Gerente: Acceso total
+        - Supervisor: Sus cierres + cierres de sus supervisados
+        - Analista: Solo sus propios cierres
+        """
+        if user.tipo_usuario == TipoUsuario.GERENTE:
+            return True
+        
+        if user.tipo_usuario == TipoUsuario.SUPERVISOR:
+            return (
+                cierre.analista == user or 
+                cierre.analista in user.analistas_supervisados.all()
+            )
+        
+        # Analista solo ve sus cierres
+        return cierre.analista == user

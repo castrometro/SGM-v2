@@ -75,6 +75,8 @@ def procesar_archivo_erp(self, archivo_id, usuario_id=None):
         # Verificar si hay conceptos nuevos por clasificar
         _verificar_clasificacion_pendiente(archivo.cierre)
         
+        # NOTA: La transición a ARCHIVOS_LISTOS es manual (botón "Continuar")
+        
         logger.info(f"Archivo ERP procesado ID={archivo_id}: {resultado.get('filas', 0)} filas")
         return resultado
         
@@ -339,3 +341,7 @@ def _verificar_clasificacion_pendiente(cierre):
     
     cierre.requiere_clasificacion = sin_clasificar > 0
     cierre.save()
+
+
+# NOTA: _intentar_transicion_archivos_listos() removida
+# La transición a ARCHIVOS_LISTOS ahora es manual via botón "Continuar"

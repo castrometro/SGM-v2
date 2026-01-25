@@ -248,6 +248,87 @@ class CierreViewSet(viewsets.ModelViewSet):
             'cierre': CierreDetailSerializer(result.data).data
         })
 
+    @action(detail=True, methods=['post'], url_path='confirmar-archivos-listos')
+    def confirmar_archivos_listos(self, request, pk=None):
+        """
+        Confirmar que los archivos están listos y transicionar a ARCHIVOS_LISTOS.
+        
+        Se llama manualmente cuando el usuario confirma que todos los archivos
+        necesarios están cargados (procesados o marcados como NO_APLICA).
+        
+        Prerrequisitos:
+        - Estado actual: CARGA_ARCHIVOS
+        - Todos los archivos ERP: PROCESADO
+        - Todos los archivos analista: PROCESADO o NO_APLICA
+        - Clasificación completada (requiere_clasificacion = False)
+        - Mapeo completado (requiere_mapeo = False)
+        """
+        cierre = self.get_object()
+        user = request.user
+        
+        # SEC-001: Validar que el usuario tiene acceso al cierre
+        if not self._user_can_access_cierre(user, cierre):
+            return Response(
+                {'error': 'No tiene permisos para este cierre'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Verificar que está en CARGA_ARCHIVOS
+        if cierre.estado != EstadoCierre.CARGA_ARCHIVOS:
+            return Response(
+                {'error': f'Solo se puede confirmar desde CARGA_ARCHIVOS. Estado actual: {cierre.estado}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Verificar que todo está listo
+        verificacion = CierreService.verificar_archivos_listos(cierre)
+        
+        if not verificacion['listos']:
+            return Response({
+                'error': 'No se puede confirmar, hay elementos pendientes',
+                'pendientes': verificacion['pendientes'],
+                'detalle': verificacion['detalle']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Transicionar a ARCHIVOS_LISTOS
+        result = CierreService.cambiar_estado(
+            cierre=cierre,
+            nuevo_estado=EstadoCierre.ARCHIVOS_LISTOS,
+            user=request.user
+        )
+        
+        if not result.success:
+            return Response(
+                {'error': result.error},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        return Response({
+            'message': 'Archivos confirmados. Listo para generar comparación.',
+            'cierre': CierreDetailSerializer(result.data).data
+        })
+    
+    def _user_can_access_cierre(self, user, cierre):
+        """
+        Valida que el usuario tiene acceso al cierre.
+        
+        Reglas:
+        - Gerente: Acceso total
+        - Supervisor: Sus cierres + cierres de sus supervisados
+        - Analista: Solo sus propios cierres
+        """
+        if user.tipo_usuario == TipoUsuario.GERENTE:
+            return True
+        
+        if user.tipo_usuario == TipoUsuario.SUPERVISOR:
+            return (
+                cierre.analista == user or 
+                cierre.analista in user.analistas_supervisados.all()
+            )
+        
+        # Analista solo ve sus cierres
+        return cierre.analista == user
+
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, IsSupervisor])
     def cierres_equipo(self, request):
         """

@@ -69,11 +69,13 @@ export const PUEDEN_SER_SUPERVISORES = Object.freeze([
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Estados del proceso de cierre de nómina (7 estados principales).
+ * Estados del proceso de cierre de nómina (8 estados principales).
  * 
  * Flujo principal:
  *   CARGA_ARCHIVOS (hub único: ERP + clasificación + novedades + mapeo)
- *   → [Generar Comparación]
+ *   → [Automático cuando archivos listos]
+ *   → ARCHIVOS_LISTOS
+ *   → [Click manual: Generar Comparación]
  *   → CON_DISCREPANCIAS / SIN_DISCREPANCIAS
  *   → [Click manual] → CONSOLIDADO
  *   → [Detectar Incidencias manual]
@@ -82,11 +84,13 @@ export const PUEDEN_SER_SUPERVISORES = Object.freeze([
  * 
  * IMPORTANTE:
  * - CARGA_ARCHIVOS es el hub donde se hace todo el trabajo de preparación
+ * - Transición a ARCHIVOS_LISTOS es automática cuando todos los archivos están procesados
  * - SIN_DISCREPANCIAS requiere click manual para pasar a CONSOLIDADO
- * - Se puede volver a CARGA_ARCHIVOS desde CON/SIN_DISCREPANCIAS
+ * - Se puede volver a CARGA_ARCHIVOS desde ARCHIVOS_LISTOS/CON/SIN_DISCREPANCIAS
  */
 export const ESTADO_CIERRE = Object.freeze({
   CARGA_ARCHIVOS: 'carga_archivos',       // Hub único: ERP + clasificación + novedades + mapeo
+  ARCHIVOS_LISTOS: 'archivos_listos',     // Todos los archivos procesados, listo para comparar
   CON_DISCREPANCIAS: 'con_discrepancias', // Hay diferencias por resolver
   SIN_DISCREPANCIAS: 'sin_discrepancias', // 0 discrepancias, requiere click manual
   CONSOLIDADO: 'consolidado',             // Datos validados y confirmados
@@ -102,6 +106,7 @@ export const ESTADO_CIERRE = Object.freeze({
  */
 export const ESTADOS_CIERRE_ACTIVOS = Object.freeze([
   ESTADO_CIERRE.CARGA_ARCHIVOS,
+  ESTADO_CIERRE.ARCHIVOS_LISTOS,
   ESTADO_CIERRE.CON_DISCREPANCIAS,
   ESTADO_CIERRE.SIN_DISCREPANCIAS,
   ESTADO_CIERRE.CONSOLIDADO,
@@ -128,6 +133,7 @@ export const ESTADOS_CIERRE_EDITABLES = Object.freeze([
  * Estados que permiten volver a CARGA_ARCHIVOS
  */
 export const ESTADOS_PUEDEN_RETROCEDER = Object.freeze([
+  ESTADO_CIERRE.ARCHIVOS_LISTOS,
   ESTADO_CIERRE.CON_DISCREPANCIAS,
   ESTADO_CIERRE.SIN_DISCREPANCIAS,
 ])
@@ -136,6 +142,7 @@ export const ESTADOS_PUEDEN_RETROCEDER = Object.freeze([
  * Estados que requieren acción manual del usuario
  */
 export const ESTADOS_REQUIEREN_ACCION_MANUAL = Object.freeze([
+  ESTADO_CIERRE.ARCHIVOS_LISTOS,
   ESTADO_CIERRE.SIN_DISCREPANCIAS,
   ESTADO_CIERRE.SIN_INCIDENCIAS,
 ])
@@ -159,6 +166,13 @@ export const ESTADOS_PUEDEN_CONSOLIDAR = Object.freeze([
  */
 export const ESTADOS_PUEDEN_DETECTAR_INCIDENCIAS = Object.freeze([
   ESTADO_CIERRE.CONSOLIDADO,
+])
+
+/**
+ * Estados donde se puede ejecutar comparación
+ */
+export const ESTADOS_PUEDEN_COMPARAR = Object.freeze([
+  ESTADO_CIERRE.ARCHIVOS_LISTOS,
 ])
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -297,6 +311,9 @@ export const libroRequiereAccion = (estado) => ESTADOS_LIBRO_REQUIERE_ACCION.inc
  *                                    ↓
  *                                  ERROR
  * 
+ * Alternativa (sin archivo este mes):
+ *   NO_APLICA (marcado manualmente cuando no hay datos)
+ * 
  * IMPORTANTE: Las novedades se cargan DESPUÉS de que el libro esté procesado.
  * El mapeo conecta items de novedades con ConceptoLibro (headers del libro).
  */
@@ -307,6 +324,7 @@ export const ESTADO_ARCHIVO_NOVEDADES = Object.freeze({
   LISTO: 'listo',
   PROCESANDO: 'procesando',
   PROCESADO: 'procesado',
+  NO_APLICA: 'no_aplica',  // Marcado cuando no hay datos este mes
   ERROR: 'error',
 })
 
@@ -352,6 +370,21 @@ export const puedeProcesarNovedades = (estado) => ESTADOS_NOVEDADES_PUEDE_PROCES
  * @returns {boolean}
  */
 export const novedadesRequiereAccion = (estado) => ESTADOS_NOVEDADES_REQUIERE_ACCION.includes(estado)
+
+/**
+ * Estados que indican que el archivo analista está "resuelto" (procesado o no aplica)
+ */
+export const ESTADOS_ARCHIVO_ANALISTA_RESUELTOS = Object.freeze([
+  ESTADO_ARCHIVO_NOVEDADES.PROCESADO,
+  ESTADO_ARCHIVO_NOVEDADES.NO_APLICA,
+])
+
+/**
+ * Verifica si un archivo analista está resuelto (procesado o no aplica)
+ * @param {string} estado - Estado del archivo
+ * @returns {boolean}
+ */
+export const esArchivoAnalistaResuelto = (estado) => ESTADOS_ARCHIVO_ANALISTA_RESUELTOS.includes(estado)
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TIPOS DE ARCHIVOS
@@ -428,9 +461,14 @@ export const TIPO_USUARIO_BADGE = Object.freeze({
  */
 export const ESTADO_CIERRE_BADGE = Object.freeze({
   [ESTADO_CIERRE.CARGA_ARCHIVOS]: {
-    label: 'Carga Libro ERP',
+    label: 'Carga de Archivos',
     variant: 'secondary',
     color: 'gray',
+  },
+  [ESTADO_CIERRE.ARCHIVOS_LISTOS]: {
+    label: 'Archivos Listos',
+    variant: 'info',
+    color: 'blue',
   },
   [ESTADO_CIERRE.CLASIFICACION_CONCEPTOS]: {
     label: 'Clasificación',
@@ -457,8 +495,23 @@ export const ESTADO_CIERRE_BADGE = Object.freeze({
     variant: 'danger',
     color: 'red',
   },
+  [ESTADO_CIERRE.SIN_DISCREPANCIAS]: {
+    label: 'Sin Discrepancias',
+    variant: 'success',
+    color: 'green',
+  },
   [ESTADO_CIERRE.CONSOLIDADO]: {
     label: 'Consolidado',
+    variant: 'success',
+    color: 'green',
+  },
+  [ESTADO_CIERRE.CON_INCIDENCIAS]: {
+    label: 'Con Incidencias',
+    variant: 'warning',
+    color: 'orange',
+  },
+  [ESTADO_CIERRE.SIN_INCIDENCIAS]: {
+    label: 'Sin Incidencias',
     variant: 'success',
     color: 'green',
   },
@@ -560,6 +613,13 @@ export const esCierreFinal = (estado) => ESTADOS_CIERRE_FINALES.includes(estado)
  * @returns {boolean}
  */
 export const esCierreEditable = (estado) => ESTADOS_CIERRE_EDITABLES.includes(estado)
+
+/**
+ * Verifica si un estado de cierre permite comparación
+ * @param {string} estado - Estado del cierre
+ * @returns {boolean}
+ */
+export const puedeCompararCierre = (estado) => ESTADOS_PUEDEN_COMPARAR.includes(estado)
 
 /**
  * Verifica si una incidencia está abierta

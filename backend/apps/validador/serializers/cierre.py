@@ -48,8 +48,10 @@ class CierreDetailSerializer(serializers.ModelSerializer):
     estado_display = serializers.CharField(source='get_estado_display', read_only=True)
     archivos_erp_count = serializers.SerializerMethodField()
     archivos_analista_count = serializers.SerializerMethodField()
+    archivos_listos_status = serializers.SerializerMethodField()
     puede_consolidar = serializers.BooleanField(read_only=True)
     puede_finalizar = serializers.BooleanField(read_only=True)
+    puede_comparar = serializers.SerializerMethodField()
     
     class Meta:
         model = Cierre
@@ -60,7 +62,8 @@ class CierreDetailSerializer(serializers.ModelSerializer):
             'total_incidencias', 'incidencias_aprobadas',
             'es_primer_cierre', 'requiere_clasificacion', 'requiere_mapeo',
             'archivos_erp_count', 'archivos_analista_count',
-            'puede_consolidar', 'puede_finalizar',
+            'archivos_listos_status',
+            'puede_consolidar', 'puede_finalizar', 'puede_comparar',
             'fecha_creacion', 'fecha_actualizacion',
             'fecha_consolidacion', 'fecha_finalizacion',
             'observaciones',
@@ -82,6 +85,15 @@ class CierreDetailSerializer(serializers.ModelSerializer):
     
     def get_archivos_analista_count(self, obj):
         return obj.archivos_analista.filter(es_version_actual=True).count()
+    
+    def get_archivos_listos_status(self, obj):
+        """Retorna el estado de los archivos y qué falta para estar listos."""
+        from ..services import CierreService
+        return CierreService.verificar_archivos_listos(obj)
+    
+    def get_puede_comparar(self, obj):
+        """Indica si se puede ejecutar la comparación."""
+        return EstadoCierre.puede_comparar(obj.estado)
 
 
 class CierreCreateSerializer(serializers.ModelSerializer):

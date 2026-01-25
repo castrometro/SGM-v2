@@ -289,6 +289,8 @@ def procesar_archivo_analista(self, archivo_id, usuario_id=None):
         if archivo.tipo != 'novedades':
             _verificar_mapeo_pendiente(archivo.cierre)
         
+        # NOTA: La transición a ARCHIVOS_LISTOS es manual (botón "Continuar")
+        
         logger.info(f"Archivo Analista procesado: {archivo.nombre_original} - {resultado}")
         return resultado
         
@@ -710,3 +712,7 @@ def _verificar_mapeo_pendiente(cierre):
     
     cierre.requiere_mapeo = (sin_mapear + conceptos_sin_mapear) > 0
     cierre.save()
+
+
+# NOTA: _intentar_transicion_archivos_listos() removida
+# La transición a ARCHIVOS_LISTOS ahora es manual via botón "Continuar"

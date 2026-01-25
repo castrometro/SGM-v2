@@ -2,10 +2,11 @@
  * Página de detalle de cierre
  * Muestra el progreso del cierre y permite ejecutar las acciones según el estado
  * 
- * Flujo de 7 estados:
- *   1. CARGA_ARCHIVOS (hub) → 2. CON/SIN_DISCREPANCIAS → 3. CONSOLIDADO →
- *   4. CON/SIN_INCIDENCIAS → 5. FINALIZADO
+ * Flujo de 8 estados:
+ *   1. CARGA_ARCHIVOS (hub) → 1b. ARCHIVOS_LISTOS → 2. CON/SIN_DISCREPANCIAS → 
+ *   3. CONSOLIDADO → 4. CON/SIN_INCIDENCIAS → 5. FINALIZADO
  */
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, FileCheck2, Upload, GitCompare, FileText, CheckCircle, AlertTriangle, AlertCircle, Loader2, RotateCcw } from 'lucide-react'
@@ -14,9 +15,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui
 import Badge from '../../../components/ui/Badge'
 import { CargaArchivos } from '../components'
 
-// Mapa de estados con labels, colores y paso en el stepper (7 pasos)
+// Mapa de estados con labels, colores y paso en el stepper (8 estados)
 const ESTADOS = {
   carga_archivos: { label: 'Carga de Archivos', color: 'info', step: 1, icon: Upload },
+  archivos_listos: { label: 'Archivos Listos', color: 'info', step: 1, icon: FileCheck2 },
   con_discrepancias: { label: 'Con Discrepancias', color: 'danger', step: 2, icon: AlertTriangle },
   sin_discrepancias: { label: 'Sin Discrepancias', color: 'success', step: 3, icon: CheckCircle },
   consolidado: { label: 'Consolidado', color: 'info', step: 4, icon: FileText },
@@ -27,7 +29,7 @@ const ESTADOS = {
   error: { label: 'Error', color: 'danger', step: 0, icon: AlertTriangle },
 }
 
-// Pasos del stepper (solo los 7 principales)
+// Pasos del stepper (solo los 5 principales)
 const STEPPER_STEPS = [
   { key: 'carga_archivos', label: 'Carga', step: 1 },
   { key: 'discrepancias', label: 'Discrepancias', step: 2 },
@@ -39,7 +41,8 @@ const STEPPER_STEPS = [
 // Mapeo de estados a paso del stepper
 const getStepperStep = (estado) => {
   switch (estado) {
-    case 'carga_archivos': return 1
+    case 'carga_archivos':
+    case 'archivos_listos': return 1
     case 'con_discrepancias':
     case 'sin_discrepancias': return 2
     case 'consolidado': return 3
@@ -83,6 +86,16 @@ const CierreDetailPage = () => {
       // Estado 1: Hub de carga de archivos (ERP + Clasificación + Novedades + Mapeo)
       case 'carga_archivos':
         return <CargaArchivos cierreId={id} cierre={cierre} onUpdate={refetch} />
+      
+      // Estado 1b: Archivos listos - mostrar panel para generar comparación
+      case 'archivos_listos':
+        return (
+          <ArchivosListosPanel 
+            cierre={cierre}
+            onGenerarComparacion={() => handleGenerarComparacion()}
+            onVolver={() => handleVolverACarga()}
+          />
+        )
       
       // Estado 2: Con discrepancias - mostrar tabla de discrepancias
       case 'con_discrepancias':
@@ -179,6 +192,15 @@ const CierreDetailPage = () => {
       refetch()
     } catch (error) {
       console.error('Error al volver a carga:', error)
+    }
+  }
+
+  const handleGenerarComparacion = async () => {
+    try {
+      await api.post(`/v1/validador/cierres/${id}/generar_comparacion/`)
+      refetch()
+    } catch (error) {
+      console.error('Error al generar comparación:', error)
     }
   }
 
@@ -349,6 +371,72 @@ const DiscrepanciasPanel = ({ cierre, onVolver }) => {
           <AlertTriangle className="h-12 w-12 mx-auto mb-4 opacity-50" />
           <p>Se encontraron diferencias entre el libro ERP y las novedades.</p>
           <p className="text-sm mt-2">Tabla de discrepancias (implementación pendiente)</p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * Panel para archivos listos - Estado: ARCHIVOS_LISTOS
+ * Muestra resumen y botón para generar comparación
+ */
+const ArchivosListosPanel = ({ cierre, onGenerarComparacion, onVolver }) => {
+  const [isGenerating, setIsGenerating] = useState(false)
+
+  const handleGenerarClick = async () => {
+    setIsGenerating(true)
+    try {
+      await onGenerarComparacion()
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <FileCheck2 className="h-5 w-5 text-green-400" />
+          Archivos Listos
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-center py-8">
+          <FileCheck2 className="h-16 w-16 mx-auto mb-4 text-green-400" />
+          <p className="text-lg text-secondary-200 mb-2">¡Todos los archivos están listos!</p>
+          <p className="text-secondary-400 mb-6">
+            Los archivos han sido cargados y procesados correctamente.
+            <br />
+            Puedes continuar generando la comparación entre el ERP y las novedades.
+          </p>
+          <div className="flex items-center justify-center gap-4">
+            <button
+              onClick={onVolver}
+              disabled={isGenerating}
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-secondary-700 hover:bg-secondary-600 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Volver a Carga
+            </button>
+            <button
+              onClick={handleGenerarClick}
+              disabled={isGenerating}
+              className="flex items-center gap-2 px-6 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+            >
+              {isGenerating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Generando...
+                </>
+              ) : (
+                <>
+                  <GitCompare className="h-4 w-4" />
+                  Generar Comparación
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </CardContent>
     </Card>

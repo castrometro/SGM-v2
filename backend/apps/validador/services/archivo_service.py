@@ -382,3 +382,177 @@ class ArchivoService(BaseService):
             cls.get_logger().warning(
                 f"Task procesar_archivo_analista no disponible para archivo {archivo.id}"
             )
+    
+    @classmethod
+    def marcar_no_aplica(
+        cls,
+        cierre: Cierre,
+        tipo: str,
+        user=None
+    ) -> ServiceResult[ArchivoAnalista]:
+        """
+        Marcar un tipo de archivo analista como "No Aplica" para este mes.
+        
+        Crea un registro de ArchivoAnalista con estado NO_APLICA para indicar
+        que este tipo de archivo no tiene datos este mes.
+        
+        Args:
+            cierre: Cierre al que pertenece
+            tipo: Tipo de archivo (novedades, asistencias, finiquitos, ingresos)
+            user: Usuario que marca
+            
+        Returns:
+            ServiceResult con el archivo creado/actualizado
+        """
+        from ..constants import EstadoCierre, EstadoArchivoNovedades
+        from .cierre_service import CierreService
+        
+        logger = cls.get_logger()
+        
+        # Validar tipo
+        if tipo not in cls.TIPOS_ANALISTA:
+            return ServiceResult.fail(
+                f'Tipo de archivo inválido. Tipos válidos: {cls.TIPOS_ANALISTA}'
+            )
+        
+        # Validar estado del cierre
+        if cierre.estado != EstadoCierre.CARGA_ARCHIVOS:
+            return ServiceResult.fail(
+                'Solo se puede marcar "No Aplica" en estado CARGA_ARCHIVOS'
+            )
+        
+        # Verificar si ya existe un archivo de este tipo
+        archivo_existente = ArchivoAnalista.objects.filter(
+            cierre=cierre,
+            tipo=tipo,
+            es_version_actual=True
+        ).first()
+        
+        if archivo_existente:
+            # Si ya existe y está procesado, no permitir
+            if archivo_existente.estado == EstadoArchivoNovedades.PROCESADO:
+                return ServiceResult.fail(
+                    f'Ya existe un archivo {tipo} procesado. Elimínelo primero.'
+                )
+            # Si ya está como NO_APLICA, retornar éxito
+            if archivo_existente.estado == EstadoArchivoNovedades.NO_APLICA:
+                return ServiceResult.ok(archivo_existente)
+        
+        try:
+            with transaction.atomic():
+                # Desactivar versiones anteriores si existen
+                ArchivoAnalista.objects.filter(
+                    cierre=cierre,
+                    tipo=tipo,
+                    es_version_actual=True
+                ).update(es_version_actual=False)
+                
+                # Crear registro con estado NO_APLICA
+                archivo = ArchivoAnalista.objects.create(
+                    cierre=cierre,
+                    tipo=tipo,
+                    estado=EstadoArchivoNovedades.NO_APLICA,
+                    nombre_original=f'{tipo}_no_aplica.txt',
+                    subido_por=user,
+                    es_version_actual=True,
+                    version=(archivo_existente.version + 1) if archivo_existente else 1,
+                )
+                
+                cls.log_action(
+                    action='marcar_no_aplica',
+                    entity_type='archivo_analista',
+                    entity_id=archivo.id,
+                    user=user,
+                    extra={
+                        'cierre_id': cierre.id,
+                        'tipo': tipo,
+                    }
+                )
+                
+                logger.info(
+                    f"Archivo analista {tipo} marcado como NO_APLICA para cierre {cierre.id}"
+                )
+                
+                # NOTA: La transición a ARCHIVOS_LISTOS es manual (botón "Continuar")
+                
+                return ServiceResult.ok(archivo)
+                
+        except Exception as e:
+            logger.error(f"Error al marcar no_aplica: {str(e)}")
+            return ServiceResult.fail(f'Error: {str(e)}')
+    
+    @classmethod
+    def desmarcar_no_aplica(
+        cls,
+        cierre: Cierre,
+        tipo: str,
+        user=None
+    ) -> ServiceResult[None]:
+        """
+        Eliminar el marcado "No Aplica" de un tipo de archivo.
+        
+        Permite volver a subir un archivo de este tipo.
+        
+        Args:
+            cierre: Cierre al que pertenece
+            tipo: Tipo de archivo
+            user: Usuario que desmarca
+            
+        Returns:
+            ServiceResult indicando éxito o error
+        """
+        from ..constants import EstadoCierre, EstadoArchivoNovedades
+        from .cierre_service import CierreService
+        
+        logger = cls.get_logger()
+        
+        # Validar estado del cierre
+        if cierre.estado not in [EstadoCierre.CARGA_ARCHIVOS, EstadoCierre.ARCHIVOS_LISTOS]:
+            return ServiceResult.fail(
+                'Solo se puede desmarcar en estados CARGA_ARCHIVOS o ARCHIVOS_LISTOS'
+            )
+        
+        archivo = ArchivoAnalista.objects.filter(
+            cierre=cierre,
+            tipo=tipo,
+            es_version_actual=True,
+            estado=EstadoArchivoNovedades.NO_APLICA
+        ).first()
+        
+        if not archivo:
+            return ServiceResult.fail(
+                f'No hay archivo {tipo} marcado como NO_APLICA'
+            )
+        
+        try:
+            with transaction.atomic():
+                archivo.es_version_actual = False
+                archivo.save()
+                
+                cls.log_action(
+                    action='desmarcar_no_aplica',
+                    entity_type='archivo_analista',
+                    entity_id=archivo.id,
+                    user=user,
+                    extra={
+                        'cierre_id': cierre.id,
+                        'tipo': tipo,
+                    }
+                )
+                
+                logger.info(
+                    f"Desmarcado NO_APLICA para {tipo} en cierre {cierre.id}"
+                )
+                
+                # Si estaba en ARCHIVOS_LISTOS, volver a CARGA_ARCHIVOS
+                if cierre.estado == EstadoCierre.ARCHIVOS_LISTOS:
+                    CierreService.volver_a_carga_archivos(
+                        cierre, user, 
+                        motivo=f'Se desmarcó NO_APLICA del archivo {tipo}'
+                    )
+                
+                return ServiceResult.ok(None)
+                
+        except Exception as e:
+            logger.error(f"Error al desmarcar no_aplica: {str(e)}")
+            return ServiceResult.fail(f'Error: {str(e)}')

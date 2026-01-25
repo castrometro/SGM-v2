@@ -8,8 +8,9 @@ Centraliza toda la lógica de:
 - Detección de incidencias
 - Finalización
 
-Flujo de estados (7 principales):
-    CARGA_ARCHIVOS → [Generar Comparación] → CON/SIN_DISCREPANCIAS
+Flujo de estados (8 principales):
+    CARGA_ARCHIVOS → [Auto: archivos listos] → ARCHIVOS_LISTOS
+    ARCHIVOS_LISTOS → [Click manual: Generar Comparación] → CON/SIN_DISCREPANCIAS
     SIN_DISCREPANCIAS → [Click manual] → CONSOLIDADO
     CONSOLIDADO → [Detectar Incidencias manual] → CON/SIN_INCIDENCIAS
     SIN_INCIDENCIAS → [Finalizar] → FINALIZADO
@@ -21,7 +22,7 @@ from typing import Optional, List, Dict, Any
 
 from .base import BaseService, ServiceResult
 from ..models import Cierre
-from ..constants import EstadoCierre
+from ..constants import EstadoCierre, EstadoArchivoLibro, EstadoArchivoNovedades
 
 
 class CierreService(BaseService):
@@ -37,12 +38,17 @@ class CierreService(BaseService):
             cierre_actualizado = result.data
     """
     
-    # Transiciones de estado permitidas (nuevo flujo de 7 estados)
+    # Transiciones de estado permitidas (nuevo flujo de 8 estados)
     TRANSICIONES_VALIDAS = {
-        # Desde hub de carga → comparación genera discrepancias o no
+        # Desde hub de carga → automático a archivos listos cuando todo procesado
         EstadoCierre.CARGA_ARCHIVOS: [
-            EstadoCierre.CON_DISCREPANCIAS,
-            EstadoCierre.SIN_DISCREPANCIAS,
+            EstadoCierre.ARCHIVOS_LISTOS,     # Automático cuando archivos listos
+        ],
+        # Desde archivos listos → comparación genera discrepancias o no
+        EstadoCierre.ARCHIVOS_LISTOS: [
+            EstadoCierre.CARGA_ARCHIVOS,      # Volver si se elimina/reemplaza archivo
+            EstadoCierre.CON_DISCREPANCIAS,   # Resultado de comparación
+            EstadoCierre.SIN_DISCREPANCIAS,   # Resultado de comparación
         ],
         # Puede volver a carga o pasar a sin_discrepancias al resolver todas
         EstadoCierre.CON_DISCREPANCIAS: [
@@ -160,11 +166,7 @@ class CierreService(BaseService):
         Generar comparación ERP vs Novedades.
         
         Validaciones:
-        - Debe estar en estado CARGA_ARCHIVOS
-        - Libro ERP debe estar procesado
-        - Todos los conceptos clasificados
-        - Novedades procesadas
-        - Todos los headers mapeados
+        - Debe estar en estado ARCHIVOS_LISTOS
         
         Returns:
             ServiceResult con cierre en estado CON_DISCREPANCIAS o SIN_DISCREPANCIAS
@@ -172,20 +174,14 @@ class CierreService(BaseService):
         logger = cls.get_logger()
         
         # Validar estado actual
-        if cierre.estado != EstadoCierre.CARGA_ARCHIVOS:
+        if cierre.estado != EstadoCierre.ARCHIVOS_LISTOS:
             return ServiceResult.fail(
-                f'Solo se puede generar comparación desde estado "carga_archivos". '
+                f'Solo se puede generar comparación desde estado "archivos_listos". '
                 f'Estado actual: {cierre.estado}'
             )
         
         try:
             with transaction.atomic():
-                # TODO: Validar prerrequisitos
-                # - Libro ERP procesado
-                # - Conceptos clasificados
-                # - Novedades procesadas
-                # - Headers mapeados
-                
                 # TODO: Ejecutar task de comparación real
                 # Por ahora, verificamos si hay discrepancias existentes
                 tiene_discrepancias = cierre.discrepancias.exists()
@@ -449,3 +445,236 @@ class CierreService(BaseService):
         except Exception as e:
             logger.error(f"Error al cancelar cierre {cierre.id}: {str(e)}")
             return ServiceResult.fail(f'Error al cancelar: {str(e)}')
+    
+    # ========================================
+    # Métodos para verificación de archivos
+    # ========================================
+    
+    @classmethod
+    def verificar_archivos_listos(cls, cierre: Cierre) -> Dict[str, Any]:
+        """
+        Verifica si todos los archivos del cierre están listos para comparación.
+        
+        Condiciones:
+        - Archivos ERP (ambos obligatorios):
+          - libro_remuneraciones: PROCESADO
+          - movimientos_mes: PROCESADO
+        - Archivos Analista (todos deben estar resueltos):
+          - novedades: PROCESADO o NO_APLICA
+          - asistencias: PROCESADO o NO_APLICA
+          - finiquitos: PROCESADO o NO_APLICA
+          - ingresos: PROCESADO o NO_APLICA
+        - Clasificación completada (sin conceptos pendientes)
+        - Mapeo completado
+        
+        Returns:
+            Dict con:
+            - listos: bool - Si todos los archivos están listos
+            - detalle: Dict con estado de cada archivo
+            - pendientes: List de archivos/tareas pendientes
+        """
+        from ..models import ArchivoERP, ArchivoAnalista
+        
+        archivos_erp = cierre.archivos_erp.filter(es_version_actual=True)
+        archivos_analista = cierre.archivos_analista.filter(es_version_actual=True)
+        
+        # Estado de archivos ERP
+        libro = archivos_erp.filter(tipo='libro_remuneraciones').first()
+        movimientos = archivos_erp.filter(tipo='movimientos_mes').first()
+        
+        libro_listo = libro and EstadoArchivoLibro.esta_resuelto(libro.estado)
+        movimientos_listo = movimientos and movimientos.estado == 'procesado'
+        
+        # Estado de archivos Analista
+        novedades = archivos_analista.filter(tipo='novedades').first()
+        asistencias = archivos_analista.filter(tipo='asistencias').first()
+        finiquitos = archivos_analista.filter(tipo='finiquitos').first()
+        ingresos = archivos_analista.filter(tipo='ingresos').first()
+        
+        novedades_listo = novedades and EstadoArchivoNovedades.esta_resuelto(novedades.estado)
+        asistencias_listo = asistencias and EstadoArchivoNovedades.esta_resuelto(asistencias.estado)
+        finiquitos_listo = finiquitos and EstadoArchivoNovedades.esta_resuelto(finiquitos.estado)
+        ingresos_listo = ingresos and EstadoArchivoNovedades.esta_resuelto(ingresos.estado)
+        
+        # Verificar clasificación y mapeo
+        clasificacion_completa = not cierre.requiere_clasificacion
+        mapeo_completo = not cierre.requiere_mapeo
+        
+        # Construir lista de pendientes
+        pendientes = []
+        
+        if not libro_listo:
+            pendientes.append('Libro de Remuneraciones (ERP)')
+        if not movimientos_listo:
+            pendientes.append('Movimientos del Mes (ERP)')
+        if not novedades_listo:
+            pendientes.append('Novedades')
+        if not asistencias_listo:
+            pendientes.append('Asistencias')
+        if not finiquitos_listo:
+            pendientes.append('Finiquitos')
+        if not ingresos_listo:
+            pendientes.append('Ingresos')
+        if not clasificacion_completa:
+            pendientes.append('Clasificación de conceptos')
+        if not mapeo_completo:
+            pendientes.append('Mapeo de headers')
+        
+        todos_listos = (
+            libro_listo and movimientos_listo and
+            novedades_listo and asistencias_listo and
+            finiquitos_listo and ingresos_listo and
+            clasificacion_completa and mapeo_completo
+        )
+        
+        return {
+            'listos': todos_listos,
+            'detalle': {
+                'erp': {
+                    'libro_remuneraciones': {
+                        'subido': libro is not None,
+                        'estado': libro.estado if libro else None,
+                        'listo': libro_listo,
+                    },
+                    'movimientos_mes': {
+                        'subido': movimientos is not None,
+                        'estado': movimientos.estado if movimientos else None,
+                        'listo': movimientos_listo,
+                    },
+                },
+                'analista': {
+                    'novedades': {
+                        'subido': novedades is not None,
+                        'estado': novedades.estado if novedades else None,
+                        'listo': novedades_listo,
+                    },
+                    'asistencias': {
+                        'subido': asistencias is not None,
+                        'estado': asistencias.estado if asistencias else None,
+                        'listo': asistencias_listo,
+                    },
+                    'finiquitos': {
+                        'subido': finiquitos is not None,
+                        'estado': finiquitos.estado if finiquitos else None,
+                        'listo': finiquitos_listo,
+                    },
+                    'ingresos': {
+                        'subido': ingresos is not None,
+                        'estado': ingresos.estado if ingresos else None,
+                        'listo': ingresos_listo,
+                    },
+                },
+                'clasificacion_completa': clasificacion_completa,
+                'mapeo_completo': mapeo_completo,
+            },
+            'pendientes': pendientes,
+        }
+    
+    @classmethod
+    def intentar_transicion_archivos_listos(cls, cierre: Cierre, user=None) -> ServiceResult[Cierre]:
+        """
+        Intenta cambiar el estado del cierre a ARCHIVOS_LISTOS si todos los
+        archivos están procesados.
+        
+        Esta función se llama automáticamente después de:
+        - Procesar un archivo ERP
+        - Procesar un archivo Analista
+        - Marcar un archivo como NO_APLICA
+        - Completar clasificación
+        - Completar mapeo
+        
+        Args:
+            cierre: Cierre a verificar
+            user: Usuario que disparó la acción
+            
+        Returns:
+            ServiceResult con el cierre (puede o no haber cambiado de estado)
+        """
+        logger = cls.get_logger()
+        
+        # Verificación rápida sin bloqueo (evita bloqueos innecesarios)
+        if cierre.estado != EstadoCierre.CARGA_ARCHIVOS:
+            return ServiceResult.ok(cierre)
+        
+        try:
+            # Usar select_for_update para evitar race conditions
+            # cuando múltiples archivos se procesan simultáneamente
+            with transaction.atomic():
+                # Re-obtener el cierre con bloqueo exclusivo
+                cierre_locked = Cierre.objects.select_for_update(nowait=False).get(pk=cierre.pk)
+                
+                # Verificar estado nuevamente (pudo cambiar mientras esperábamos el lock)
+                if cierre_locked.estado != EstadoCierre.CARGA_ARCHIVOS:
+                    logger.debug(
+                        f"Cierre {cierre.id} ya no está en CARGA_ARCHIVOS "
+                        f"(estado actual: {cierre_locked.estado})"
+                    )
+                    return ServiceResult.ok(cierre_locked)
+                
+                # Verificar si todos los archivos están listos
+                verificacion = cls.verificar_archivos_listos(cierre_locked)
+                
+                if not verificacion['listos']:
+                    logger.debug(
+                        f"Cierre {cierre.id} aún tiene pendientes: {verificacion['pendientes']}"
+                    )
+                    return ServiceResult.ok(cierre_locked)
+                
+                # Todos listos → cambiar a ARCHIVOS_LISTOS
+                # Nota: cambiar_estado tiene su propio atomic(), pero está dentro de este
+                result = cls.cambiar_estado(cierre_locked, EstadoCierre.ARCHIVOS_LISTOS, user)
+                
+                if result.success:
+                    logger.info(
+                        f"Cierre {cierre.id} cambió automáticamente a ARCHIVOS_LISTOS. "
+                        f"Todos los archivos procesados."
+                    )
+                
+                return result
+                
+        except Exception as e:
+            logger.error(f"Error al intentar transición a ARCHIVOS_LISTOS: {e}")
+            return ServiceResult.fail(f"Error en transición: {str(e)}")
+    
+    @classmethod
+    def volver_a_carga_archivos(cls, cierre: Cierre, user=None, motivo: str = None) -> ServiceResult[Cierre]:
+        """
+        Retrocede el cierre al estado CARGA_ARCHIVOS.
+        
+        Permitido desde:
+        - ARCHIVOS_LISTOS (si se elimina/reemplaza un archivo)
+        - CON_DISCREPANCIAS
+        - SIN_DISCREPANCIAS
+        
+        Args:
+            cierre: Cierre a retroceder
+            user: Usuario que ejecuta la acción
+            motivo: Motivo del retroceso
+            
+        Returns:
+            ServiceResult con el cierre actualizado
+        """
+        logger = cls.get_logger()
+        
+        if not EstadoCierre.puede_retroceder(cierre.estado):
+            return ServiceResult.fail(
+                f'No se puede retroceder desde el estado "{cierre.estado}"'
+            )
+        
+        result = cls.cambiar_estado(cierre, EstadoCierre.CARGA_ARCHIVOS, user)
+        
+        if result.success:
+            logger.info(
+                f"Cierre {cierre.id} retrocedió a CARGA_ARCHIVOS. "
+                f"Usuario: {user}. Motivo: {motivo or 'No especificado'}"
+            )
+            
+            cls.log_action(
+                action='retroceder_estado',
+                entity_type='cierre',
+                entity_id=cierre.id,
+                user=user,
+                extra={'motivo': motivo}
+            )
+        
+        return result

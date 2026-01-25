@@ -8,14 +8,18 @@ Incluye:
 - Categorías de conceptos
 """
 
+from django.db import models
 
-class EstadoCierre:
+
+class EstadoCierre(models.TextChoices):
     """
-    Estados del proceso de cierre de nómina (7 estados principales).
+    Estados del proceso de cierre de nómina (8 estados principales).
     
     Flujo principal:
         CARGA_ARCHIVOS (hub único: ERP + clasificación + novedades + mapeo)
-        → [Generar Comparación]
+        → [Automático cuando todos archivos listos]
+        → ARCHIVOS_LISTOS (listo para comparar)
+        → [Click manual: Generar Comparación]
         → CON_DISCREPANCIAS / SIN_DISCREPANCIAS
         → [Click manual] → CONSOLIDADO
         → [Detectar Incidencias manual]
@@ -24,8 +28,9 @@ class EstadoCierre:
     
     IMPORTANTE:
     - CARGA_ARCHIVOS es el hub donde se hace todo el trabajo de preparación
+    - Transición a ARCHIVOS_LISTOS es automática cuando todos los archivos están procesados
     - SIN_DISCREPANCIAS requiere click manual para pasar a CONSOLIDADO
-    - Se puede volver a CARGA_ARCHIVOS desde CON/SIN_DISCREPANCIAS
+    - Se puede volver a CARGA_ARCHIVOS desde ARCHIVOS_LISTOS/CON/SIN_DISCREPANCIAS
     - Detección de incidencias es manual
     
     Uso:
@@ -37,75 +42,107 @@ class EstadoCierre:
         if cierre.estado in EstadoCierre.ESTADOS_ACTIVOS:
             ...
     """
-    # Estados del flujo (7 principales)
-    CARGA_ARCHIVOS = 'carga_archivos'       # Hub único: ERP + clasificación + novedades + mapeo
-    CON_DISCREPANCIAS = 'con_discrepancias' # Hay diferencias por resolver
-    SIN_DISCREPANCIAS = 'sin_discrepancias' # 0 discrepancias, requiere click manual
-    CONSOLIDADO = 'consolidado'             # Datos validados y confirmados
-    CON_INCIDENCIAS = 'con_incidencias'     # Hay incidencias por resolver
-    SIN_INCIDENCIAS = 'sin_incidencias'     # No hay incidencias
-    FINALIZADO = 'finalizado'               # Proceso completo
+    # Estados del flujo (8 principales)
+    CARGA_ARCHIVOS = 'carga_archivos', 'Carga de Archivos'
+    ARCHIVOS_LISTOS = 'archivos_listos', 'Archivos Listos'
+    CON_DISCREPANCIAS = 'con_discrepancias', 'Con Discrepancias'
+    SIN_DISCREPANCIAS = 'sin_discrepancias', 'Sin Discrepancias'
+    CONSOLIDADO = 'consolidado', 'Consolidado'
+    CON_INCIDENCIAS = 'con_incidencias', 'Con Incidencias'
+    SIN_INCIDENCIAS = 'sin_incidencias', 'Sin Incidencias'
+    FINALIZADO = 'finalizado', 'Finalizado'
     
     # Estados especiales
-    CANCELADO = 'cancelado'
-    ERROR = 'error'
+    CANCELADO = 'cancelado', 'Cancelado'
+    ERROR = 'error', 'Error'
     
-    # Choices para campos de modelo Django
-    CHOICES = [
-        (CARGA_ARCHIVOS, 'Carga de Archivos'),
-        (CON_DISCREPANCIAS, 'Con Discrepancias'),
-        (SIN_DISCREPANCIAS, 'Sin Discrepancias'),
-        (CONSOLIDADO, 'Consolidado'),
-        (CON_INCIDENCIAS, 'Con Incidencias'),
-        (SIN_INCIDENCIAS, 'Sin Incidencias'),
-        (FINALIZADO, 'Finalizado'),
-        (CANCELADO, 'Cancelado'),
-        (ERROR, 'Error'),
-    ]
+    # Backward compatibility alias for .choices
+    @classmethod
+    @property
+    def CHOICES(cls):
+        return cls.choices
     
     # Grupos de estados
-    ESTADOS_ACTIVOS = [
-        CARGA_ARCHIVOS,
-        CON_DISCREPANCIAS,
-        SIN_DISCREPANCIAS,
-        CONSOLIDADO,
-        CON_INCIDENCIAS,
-        SIN_INCIDENCIAS,
-    ]
-    ESTADOS_FINALES = [FINALIZADO, CANCELADO]
-    ESTADOS_CON_ERROR = [ERROR]
+    @classmethod
+    @property
+    def ESTADOS_ACTIVOS(cls):
+        return [
+            cls.CARGA_ARCHIVOS,
+            cls.ARCHIVOS_LISTOS,
+            cls.CON_DISCREPANCIAS,
+            cls.SIN_DISCREPANCIAS,
+            cls.CONSOLIDADO,
+            cls.CON_INCIDENCIAS,
+            cls.SIN_INCIDENCIAS,
+        ]
     
-    # Estados que permiten edición de archivos (solo en hub)
-    ESTADOS_EDITABLES = [CARGA_ARCHIVOS]
+    @classmethod
+    @property
+    def ESTADOS_FINALES(cls):
+        return [cls.FINALIZADO, cls.CANCELADO]
     
-    # Estados que permiten volver a CARGA_ARCHIVOS
-    ESTADOS_PUEDEN_RETROCEDER = [CON_DISCREPANCIAS, SIN_DISCREPANCIAS]
+    @classmethod
+    @property
+    def ESTADOS_CON_ERROR(cls):
+        return [cls.ERROR]
     
-    # Estados que requieren acción manual del usuario
-    ESTADOS_REQUIEREN_ACCION_MANUAL = [SIN_DISCREPANCIAS, SIN_INCIDENCIAS]
+    @classmethod
+    @property
+    def ESTADOS_EDITABLES(cls):
+        """Estados que permiten edición de archivos (solo en hub)."""
+        return [cls.CARGA_ARCHIVOS]
     
-    # Estados que requieren atención/revisión (para dashboard)
-    ESTADOS_REQUIEREN_ATENCION = [CON_DISCREPANCIAS, CON_INCIDENCIAS]
+    @classmethod
+    @property
+    def ESTADOS_PUEDEN_RETROCEDER(cls):
+        """Estados que permiten volver a CARGA_ARCHIVOS."""
+        return [cls.ARCHIVOS_LISTOS, cls.CON_DISCREPANCIAS, cls.SIN_DISCREPANCIAS]
     
-    # Estados donde se puede finalizar
-    ESTADOS_PUEDEN_FINALIZAR = [SIN_INCIDENCIAS]
+    @classmethod
+    @property
+    def ESTADOS_REQUIEREN_ACCION_MANUAL(cls):
+        """Estados que requieren acción manual del usuario."""
+        return [cls.ARCHIVOS_LISTOS, cls.SIN_DISCREPANCIAS, cls.SIN_INCIDENCIAS]
     
-    # Estados donde se puede consolidar
-    ESTADOS_PUEDEN_CONSOLIDAR = [SIN_DISCREPANCIAS]
+    @classmethod
+    @property
+    def ESTADOS_REQUIEREN_ATENCION(cls):
+        """Estados que requieren atención/revisión (para dashboard)."""
+        return [cls.CON_DISCREPANCIAS, cls.CON_INCIDENCIAS]
     
-    # Estados donde se puede detectar incidencias
-    ESTADOS_PUEDEN_DETECTAR_INCIDENCIAS = [CONSOLIDADO]
+    @classmethod
+    @property
+    def ESTADOS_PUEDEN_FINALIZAR(cls):
+        """Estados donde se puede finalizar."""
+        return [cls.SIN_INCIDENCIAS]
     
-    ALL = [
-        CARGA_ARCHIVOS, CON_DISCREPANCIAS, SIN_DISCREPANCIAS,
-        CONSOLIDADO, CON_INCIDENCIAS, SIN_INCIDENCIAS,
-        FINALIZADO, CANCELADO, ERROR,
-    ]
+    @classmethod
+    @property
+    def ESTADOS_PUEDEN_CONSOLIDAR(cls):
+        """Estados donde se puede consolidar."""
+        return [cls.SIN_DISCREPANCIAS]
+    
+    @classmethod
+    @property
+    def ESTADOS_PUEDEN_DETECTAR_INCIDENCIAS(cls):
+        """Estados donde se puede detectar incidencias."""
+        return [cls.CONSOLIDADO]
+    
+    @classmethod
+    @property
+    def ESTADOS_PUEDEN_COMPARAR(cls):
+        """Estados donde se puede ejecutar comparación."""
+        return [cls.ARCHIVOS_LISTOS]
+    
+    @classmethod
+    @property
+    def ALL(cls):
+        return [choice[0] for choice in cls.choices]
     
     @classmethod
     def es_valido(cls, valor):
         """Verifica si un valor es un estado válido."""
-        return valor in cls.ALL
+        return valor in cls.values
     
     @classmethod
     def es_activo(cls, estado):
@@ -136,9 +173,14 @@ class EstadoCierre:
     def puede_detectar_incidencias(cls, estado):
         """Verifica si puede ejecutar detección de incidencias."""
         return estado in cls.ESTADOS_PUEDEN_DETECTAR_INCIDENCIAS
+    
+    @classmethod
+    def puede_comparar(cls, estado):
+        """Verifica si puede ejecutar comparación ERP vs Analista."""
+        return estado in cls.ESTADOS_PUEDEN_COMPARAR
 
 
-class EstadoIncidencia:
+class EstadoIncidencia(models.TextChoices):
     """
     Estados de una incidencia detectada.
     
@@ -151,29 +193,37 @@ class EstadoIncidencia:
         if incidencia.estado == EstadoIncidencia.PENDIENTE:
             incidencia.estado = EstadoIncidencia.EN_REVISION
     """
-    PENDIENTE = 'pendiente'
-    EN_REVISION = 'en_revision'
-    APROBADA = 'aprobada'
-    RECHAZADA = 'rechazada'
+    PENDIENTE = 'pendiente', 'Pendiente de Revisión'
+    EN_REVISION = 'en_revision', 'En Revisión'
+    APROBADA = 'aprobada', 'Aprobada'
+    RECHAZADA = 'rechazada', 'Rechazada'
     
-    # Choices para campos de modelo Django
-    CHOICES = [
-        (PENDIENTE, 'Pendiente de Revisión'),
-        (EN_REVISION, 'En Revisión'),
-        (APROBADA, 'Aprobada'),
-        (RECHAZADA, 'Rechazada'),
-    ]
+    # Backward compatibility alias for .choices
+    @classmethod
+    @property
+    def CHOICES(cls):
+        return cls.choices
     
     # Grupos de estados
-    ESTADOS_ABIERTOS = [PENDIENTE, EN_REVISION]
-    ESTADOS_RESUELTOS = [APROBADA, RECHAZADA]
+    @classmethod
+    @property
+    def ESTADOS_ABIERTOS(cls):
+        return [cls.PENDIENTE, cls.EN_REVISION]
     
-    ALL = [PENDIENTE, EN_REVISION, APROBADA, RECHAZADA]
+    @classmethod
+    @property
+    def ESTADOS_RESUELTOS(cls):
+        return [cls.APROBADA, cls.RECHAZADA]
+    
+    @classmethod
+    @property
+    def ALL(cls):
+        return [choice[0] for choice in cls.choices]
     
     @classmethod
     def es_valido(cls, valor):
         """Verifica si un valor es un estado válido."""
-        return valor in cls.ALL
+        return valor in cls.values
     
     @classmethod
     def es_abierto(cls, estado):
@@ -198,7 +248,7 @@ class TipoArchivoERP:
         return valor in cls.ALL
 
 
-class EstadoArchivoLibro:
+class EstadoArchivoLibro(models.TextChoices):
     """
     Estados específicos para el procesamiento del Libro de Remuneraciones.
     
@@ -208,44 +258,58 @@ class EstadoArchivoLibro:
                                                       ↓
                                                     ERROR
     """
-    SUBIDO = 'subido'
-    EXTRAYENDO_HEADERS = 'extrayendo_headers'
-    PENDIENTE_CLASIFICACION = 'pendiente_clasificacion'
-    LISTO = 'listo'
-    PROCESANDO = 'procesando'
-    PROCESADO = 'procesado'
-    ERROR = 'error'
+    SUBIDO = 'subido', 'Subido'
+    EXTRAYENDO_HEADERS = 'extrayendo_headers', 'Extrayendo Headers'
+    PENDIENTE_CLASIFICACION = 'pendiente_clasificacion', 'Pendiente Clasificación'
+    LISTO = 'listo', 'Listo para Procesar'
+    PROCESANDO = 'procesando', 'Procesando'
+    PROCESADO = 'procesado', 'Procesado'
+    ERROR = 'error', 'Error'
     
-    CHOICES = [
-        (SUBIDO, 'Subido'),
-        (EXTRAYENDO_HEADERS, 'Extrayendo Headers'),
-        (PENDIENTE_CLASIFICACION, 'Pendiente Clasificación'),
-        (LISTO, 'Listo para Procesar'),
-        (PROCESANDO, 'Procesando'),
-        (PROCESADO, 'Procesado'),
-        (ERROR, 'Error'),
-    ]
+    # Backward compatibility alias for .choices
+    @classmethod
+    @property
+    def CHOICES(cls):
+        return cls.choices
     
     # Estados que permiten extracción de headers
-    ESTADOS_PUEDE_EXTRAER_HEADERS = [SUBIDO]
+    @classmethod
+    @property
+    def ESTADOS_PUEDE_EXTRAER_HEADERS(cls):
+        return [cls.SUBIDO]
     
     # Estados que permiten clasificación
-    ESTADOS_PUEDE_CLASIFICAR = [PENDIENTE_CLASIFICACION, LISTO]
+    @classmethod
+    @property
+    def ESTADOS_PUEDE_CLASIFICAR(cls):
+        return [cls.PENDIENTE_CLASIFICACION, cls.LISTO]
     
     # Estados que permiten procesamiento
-    ESTADOS_PUEDE_PROCESAR = [LISTO]
+    @classmethod
+    @property
+    def ESTADOS_PUEDE_PROCESAR(cls):
+        return [cls.LISTO]
     
     # Estados en proceso (no terminados)
-    ESTADOS_EN_PROCESO = [EXTRAYENDO_HEADERS, PROCESANDO]
+    @classmethod
+    @property
+    def ESTADOS_EN_PROCESO(cls):
+        return [cls.EXTRAYENDO_HEADERS, cls.PROCESANDO]
     
-    ALL = [
-        SUBIDO, EXTRAYENDO_HEADERS, PENDIENTE_CLASIFICACION,
-        LISTO, PROCESANDO, PROCESADO, ERROR
-    ]
+    # Estados que indican que el archivo está "resuelto" (listo para comparación)
+    @classmethod
+    @property
+    def ESTADOS_RESUELTOS(cls):
+        return [cls.PROCESADO]
+    
+    @classmethod
+    @property
+    def ALL(cls):
+        return [choice[0] for choice in cls.choices]
     
     @classmethod
     def es_valido(cls, valor):
-        return valor in cls.ALL
+        return valor in cls.values
     
     @classmethod
     def puede_extraer_headers(cls, estado):
@@ -258,9 +322,14 @@ class EstadoArchivoLibro:
     @classmethod
     def puede_procesar(cls, estado):
         return estado in cls.ESTADOS_PUEDE_PROCESAR
+    
+    @classmethod
+    def esta_resuelto(cls, estado):
+        """Verifica si el archivo está listo para comparación."""
+        return estado in cls.ESTADOS_RESUELTOS
 
 
-class EstadoArchivoNovedades:
+class EstadoArchivoNovedades(models.TextChoices):
     """
     Estados específicos para el procesamiento del archivo de Novedades.
     
@@ -270,47 +339,65 @@ class EstadoArchivoNovedades:
                                               ↓
                                             ERROR
     
+    Alternativa (sin archivo este mes):
+        NO_APLICA (marcado manualmente cuando no hay datos)
+    
     La diferencia con el libro es que en vez de "clasificar" conceptos,
     se "mapean" items del cliente a conceptos ya clasificados del libro.
     """
-    SUBIDO = 'subido'
-    EXTRAYENDO_HEADERS = 'extrayendo_headers'
-    PENDIENTE_MAPEO = 'pendiente_mapeo'
-    LISTO = 'listo'
-    PROCESANDO = 'procesando'
-    PROCESADO = 'procesado'
-    ERROR = 'error'
+    SUBIDO = 'subido', 'Subido'
+    EXTRAYENDO_HEADERS = 'extrayendo_headers', 'Extrayendo Headers'
+    PENDIENTE_MAPEO = 'pendiente_mapeo', 'Pendiente Mapeo'
+    LISTO = 'listo', 'Listo para Procesar'
+    PROCESANDO = 'procesando', 'Procesando'
+    PROCESADO = 'procesado', 'Procesado'
+    NO_APLICA = 'no_aplica', 'No Aplica'
+    ERROR = 'error', 'Error'
     
-    CHOICES = [
-        (SUBIDO, 'Subido'),
-        (EXTRAYENDO_HEADERS, 'Extrayendo Headers'),
-        (PENDIENTE_MAPEO, 'Pendiente Mapeo'),
-        (LISTO, 'Listo para Procesar'),
-        (PROCESANDO, 'Procesando'),
-        (PROCESADO, 'Procesado'),
-        (ERROR, 'Error'),
-    ]
+    # Backward compatibility alias for .choices
+    @classmethod
+    @property
+    def CHOICES(cls):
+        return cls.choices
     
     # Estados que permiten extracción de headers
-    ESTADOS_PUEDE_EXTRAER_HEADERS = [SUBIDO]
+    @classmethod
+    @property
+    def ESTADOS_PUEDE_EXTRAER_HEADERS(cls):
+        return [cls.SUBIDO]
     
     # Estados que permiten mapeo
-    ESTADOS_PUEDE_MAPEAR = [PENDIENTE_MAPEO, LISTO]
+    @classmethod
+    @property
+    def ESTADOS_PUEDE_MAPEAR(cls):
+        return [cls.PENDIENTE_MAPEO, cls.LISTO]
     
     # Estados que permiten procesamiento
-    ESTADOS_PUEDE_PROCESAR = [LISTO]
+    @classmethod
+    @property
+    def ESTADOS_PUEDE_PROCESAR(cls):
+        return [cls.LISTO]
     
     # Estados en proceso (no terminados)
-    ESTADOS_EN_PROCESO = [EXTRAYENDO_HEADERS, PROCESANDO]
+    @classmethod
+    @property
+    def ESTADOS_EN_PROCESO(cls):
+        return [cls.EXTRAYENDO_HEADERS, cls.PROCESANDO]
     
-    ALL = [
-        SUBIDO, EXTRAYENDO_HEADERS, PENDIENTE_MAPEO,
-        LISTO, PROCESANDO, PROCESADO, ERROR
-    ]
+    # Estados que indican que el archivo está "resuelto" (listo para comparación)
+    @classmethod
+    @property
+    def ESTADOS_RESUELTOS(cls):
+        return [cls.PROCESADO, cls.NO_APLICA]
+    
+    @classmethod
+    @property
+    def ALL(cls):
+        return [choice[0] for choice in cls.choices]
     
     @classmethod
     def es_valido(cls, valor):
-        return valor in cls.ALL
+        return valor in cls.values
     
     @classmethod
     def puede_extraer_headers(cls, estado):
@@ -323,55 +410,60 @@ class EstadoArchivoNovedades:
     @classmethod
     def puede_procesar(cls, estado):
         return estado in cls.ESTADOS_PUEDE_PROCESAR
+    
+    @classmethod
+    def esta_resuelto(cls, estado):
+        """Verifica si el archivo está listo para comparación (procesado o no aplica)."""
+        return estado in cls.ESTADOS_RESUELTOS
 
 
-class CategoriaConceptoLibro:
+class CategoriaConceptoLibro(models.TextChoices):
     """
     Categorías para clasificar conceptos del Libro de Remuneraciones.
     """
-    HABERES_IMPONIBLES = 'haberes_imponibles'
-    HABERES_NO_IMPONIBLES = 'haberes_no_imponibles'
-    DESCUENTOS_LEGALES = 'descuentos_legales'
-    OTROS_DESCUENTOS = 'otros_descuentos'
-    APORTES_PATRONALES = 'aportes_patronales'
-    INFO_ADICIONAL = 'info_adicional'
-    IGNORAR = 'ignorar'
+    HABERES_IMPONIBLES = 'haberes_imponibles', 'Haberes Imponibles'
+    HABERES_NO_IMPONIBLES = 'haberes_no_imponibles', 'Haberes No Imponibles'
+    DESCUENTOS_LEGALES = 'descuentos_legales', 'Descuentos Legales'
+    OTROS_DESCUENTOS = 'otros_descuentos', 'Otros Descuentos'
+    APORTES_PATRONALES = 'aportes_patronales', 'Aportes Patronales'
+    INFO_ADICIONAL = 'info_adicional', 'Información Adicional'
+    IGNORAR = 'ignorar', 'Ignorar'
     
-    CHOICES = [
-        (HABERES_IMPONIBLES, 'Haberes Imponibles'),
-        (HABERES_NO_IMPONIBLES, 'Haberes No Imponibles'),
-        (DESCUENTOS_LEGALES, 'Descuentos Legales'),
-        (OTROS_DESCUENTOS, 'Otros Descuentos'),
-        (APORTES_PATRONALES, 'Aportes Patronales'),
-        (INFO_ADICIONAL, 'Información Adicional'),
-        (IGNORAR, 'Ignorar'),
-    ]
+    # Backward compatibility alias for .choices
+    @classmethod
+    @property
+    def CHOICES(cls):
+        return cls.choices
     
     # Categorías que se suman para calcular totales
-    CATEGORIAS_MONETARIAS = [
-        HABERES_IMPONIBLES,
-        HABERES_NO_IMPONIBLES,
-        DESCUENTOS_LEGALES,
-        OTROS_DESCUENTOS,
-        APORTES_PATRONALES,
-    ]
+    @classmethod
+    @property
+    def CATEGORIAS_MONETARIAS(cls):
+        return [
+            cls.HABERES_IMPONIBLES,
+            cls.HABERES_NO_IMPONIBLES,
+            cls.DESCUENTOS_LEGALES,
+            cls.OTROS_DESCUENTOS,
+            cls.APORTES_PATRONALES,
+        ]
     
     # Categorías que no se procesan
-    CATEGORIAS_NO_MONETARIAS = [
-        INFO_ADICIONAL,
-        IGNORAR,
-    ]
+    @classmethod
+    @property
+    def CATEGORIAS_NO_MONETARIAS(cls):
+        return [
+            cls.INFO_ADICIONAL,
+            cls.IGNORAR,
+        ]
     
-    ALL = [
-        HABERES_IMPONIBLES, HABERES_NO_IMPONIBLES,
-        DESCUENTOS_LEGALES, OTROS_DESCUENTOS,
-        APORTES_PATRONALES, INFO_ADICIONAL,
-        IGNORAR
-    ]
+    @classmethod
+    @property
+    def ALL(cls):
+        return [choice[0] for choice in cls.choices]
     
     @classmethod
     def es_valido(cls, valor):
-        return valor in cls.ALL
+        return valor in cls.values
     
     @classmethod
     def es_monetaria(cls, categoria):
