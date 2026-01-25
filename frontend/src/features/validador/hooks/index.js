@@ -15,3 +15,14 @@ export {
   TIPOS_ERP,
   TIPOS_ANALISTA,
 } from './useArchivos'
+
+export {
+  useGenerarDiscrepancias,
+  useDiscrepancias,
+  useResumenDiscrepancias,
+  useResolverDiscrepancia,
+  TIPOS_DISCREPANCIA,
+  ORIGENES_DISCREPANCIA,
+  getTipoDiscrepanciaInfo,
+  getOrigenDiscrepanciaInfo,
+} from './useDiscrepancias'

@@ -100,17 +100,39 @@ class CierreViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def generar_comparacion(self, request, pk=None):
         """
-        Generar comparación ERP vs Novedades.
+        Generar comparación ERP vs Novedades (alias de generar_discrepancias).
         
-        Prerrequisitos (validados en frontend):
+        Mantiene compatibilidad con frontend existente.
+        """
+        return self.generar_discrepancias(request, pk)
+    
+    @action(detail=True, methods=['post'], url_path='generar-discrepancias')
+    def generar_discrepancias(self, request, pk=None):
+        """
+        Iniciar generación de discrepancias (task Celery asíncrono).
+        
+        Compara:
+        1. Libro de Remuneraciones vs Novedades (montos)
+        2. Movimientos del Mes vs Archivos Analista
+        
+        El progreso se puede consultar via GET /progreso-comparacion/
+        
+        Prerrequisitos:
+        - Estado actual: ARCHIVOS_LISTOS
         - Libro ERP procesado
-        - Conceptos clasificados
-        - Novedades procesadas
-        - Headers mapeados
+        - Novedades procesadas con mapeo
         """
         cierre = self.get_object()
+        user = request.user
         
-        result = CierreService.generar_comparacion(cierre, user=request.user)
+        # Validar acceso
+        if not self._user_can_access_cierre(user, cierre):
+            return Response(
+                {'error': 'No tiene permisos para este cierre'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        result = CierreService.generar_discrepancias(cierre, user=user)
         
         if not result.success:
             return Response(
@@ -119,9 +141,34 @@ class CierreViewSet(viewsets.ModelViewSet):
             )
         
         return Response({
-            'message': 'Comparación generada exitosamente',
-            'cierre': CierreDetailSerializer(result.data).data
+            'message': 'Generación de discrepancias iniciada',
+            'cierre': CierreDetailSerializer(result.data).data,
+            'progreso_url': f'/api/v1/validador/cierres/{cierre.id}/progreso-comparacion/'
         })
+    
+    @action(detail=True, methods=['get'], url_path='progreso-comparacion')
+    def progreso_comparacion(self, request, pk=None):
+        """
+        Obtener progreso de la generación de discrepancias.
+        
+        Retorna:
+        - estado: 'pendiente', 'comparando', 'completado', 'error'
+        - progreso: 0-100
+        - fase: 'preparacion', 'libro_vs_novedades', 'movimientos', 'finalizando', 'completado'
+        - mensaje: Descripción del paso actual
+        - resultado: (solo si completado) Resumen de discrepancias
+        """
+        from apps.validador.tasks.comparacion import get_progreso_comparacion
+        
+        cierre = self.get_object()
+        
+        # Obtener progreso desde cache
+        progreso = get_progreso_comparacion(cierre.id)
+        
+        # Agregar estado actual del cierre
+        progreso['cierre_estado'] = cierre.estado
+        
+        return Response(progreso)
     
     @action(detail=True, methods=['post'])
     def cambiar_estado(self, request, pk=None):

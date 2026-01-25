@@ -38,17 +38,22 @@ class CierreService(BaseService):
             cierre_actualizado = result.data
     """
     
-    # Transiciones de estado permitidas (nuevo flujo de 8 estados)
+    # Transiciones de estado permitidas (flujo de 9 estados)
     TRANSICIONES_VALIDAS = {
         # Desde hub de carga → automático a archivos listos cuando todo procesado
         EstadoCierre.CARGA_ARCHIVOS: [
             EstadoCierre.ARCHIVOS_LISTOS,     # Automático cuando archivos listos
         ],
-        # Desde archivos listos → comparación genera discrepancias o no
+        # Desde archivos listos → inicia comparación (task Celery)
         EstadoCierre.ARCHIVOS_LISTOS: [
             EstadoCierre.CARGA_ARCHIVOS,      # Volver si se elimina/reemplaza archivo
-            EstadoCierre.CON_DISCREPANCIAS,   # Resultado de comparación
-            EstadoCierre.SIN_DISCREPANCIAS,   # Resultado de comparación
+            EstadoCierre.COMPARANDO,          # Inicia task de comparación
+        ],
+        # Estado transitorio mientras Celery procesa
+        EstadoCierre.COMPARANDO: [
+            EstadoCierre.CON_DISCREPANCIAS,   # Resultado: hay discrepancias
+            EstadoCierre.SIN_DISCREPANCIAS,   # Resultado: sin discrepancias
+            EstadoCierre.ERROR,               # Si falla el task
         ],
         # Puede volver a carga o pasar a sin_discrepancias al resolver todas
         EstadoCierre.CON_DISCREPANCIAS: [
@@ -161,49 +166,54 @@ class CierreService(BaseService):
             return ServiceResult.fail(f'Error al cambiar estado: {str(e)}')
     
     @classmethod
-    def generar_comparacion(cls, cierre: Cierre, user=None) -> ServiceResult[Cierre]:
+    def generar_discrepancias(cls, cierre: Cierre, user=None) -> ServiceResult[Cierre]:
         """
-        Generar comparación ERP vs Novedades.
+        Iniciar generación de discrepancias (comparación ERP vs Analista).
+        
+        Ejecuta task Celery asíncrono que:
+        1. Compara Libro vs Novedades
+        2. Compara Movimientos ERP vs Archivos Analista
+        
+        El progreso se puede consultar via get_progreso_comparacion().
         
         Validaciones:
         - Debe estar en estado ARCHIVOS_LISTOS
         
         Returns:
-            ServiceResult con cierre en estado CON_DISCREPANCIAS o SIN_DISCREPANCIAS
+            ServiceResult con cierre en estado COMPARANDO (task en progreso)
         """
+        from apps.validador.tasks.comparacion import ejecutar_comparacion
+        
         logger = cls.get_logger()
         
         # Validar estado actual
         if cierre.estado != EstadoCierre.ARCHIVOS_LISTOS:
             return ServiceResult.fail(
-                f'Solo se puede generar comparación desde estado "archivos_listos". '
+                f'Solo se puede generar discrepancias desde estado "archivos_listos". '
                 f'Estado actual: {cierre.estado}'
             )
         
         try:
-            with transaction.atomic():
-                # TODO: Ejecutar task de comparación real
-                # Por ahora, verificamos si hay discrepancias existentes
-                tiene_discrepancias = cierre.discrepancias.exists()
-                
-                if tiene_discrepancias:
-                    nuevo_estado = EstadoCierre.CON_DISCREPANCIAS
-                else:
-                    nuevo_estado = EstadoCierre.SIN_DISCREPANCIAS
-                
-                result = cls.cambiar_estado(cierre, nuevo_estado, user)
-                
-                if result.success:
-                    logger.info(
-                        f"Cierre {cierre.id} comparación generada. "
-                        f"Discrepancias: {tiene_discrepancias}. Estado: {nuevo_estado}"
-                    )
-                
+            # Cambiar a estado COMPARANDO
+            result = cls.cambiar_estado(cierre, EstadoCierre.COMPARANDO, user)
+            
+            if not result.success:
                 return result
+            
+            # Disparar task Celery
+            usuario_id = user.id if user else None
+            ejecutar_comparacion.delay(cierre.id, usuario_id)
+            
+            logger.info(f"Cierre {cierre.id}: Task de comparación iniciado")
+            
+            return ServiceResult.ok(cierre)
                 
         except Exception as e:
-            logger.error(f"Error al generar comparación en cierre {cierre.id}: {str(e)}")
-            return ServiceResult.fail(f'Error al generar comparación: {str(e)}')
+            logger.error(f"Error al iniciar comparación en cierre {cierre.id}: {str(e)}")
+            return ServiceResult.fail(f'Error al iniciar comparación: {str(e)}')
+    
+    # Alias para compatibilidad
+    generar_comparacion = generar_discrepancias
     
     @classmethod
     def consolidar(cls, cierre: Cierre, user=None) -> ServiceResult[Cierre]:

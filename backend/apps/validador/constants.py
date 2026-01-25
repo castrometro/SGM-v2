@@ -42,9 +42,10 @@ class EstadoCierre(models.TextChoices):
         if cierre.estado in EstadoCierre.ESTADOS_ACTIVOS:
             ...
     """
-    # Estados del flujo (8 principales)
+    # Estados del flujo (9 principales)
     CARGA_ARCHIVOS = 'carga_archivos', 'Carga de Archivos'
     ARCHIVOS_LISTOS = 'archivos_listos', 'Archivos Listos'
+    COMPARANDO = 'comparando', 'Generando Discrepancias'  # Estado transitorio durante task Celery
     CON_DISCREPANCIAS = 'con_discrepancias', 'Con Discrepancias'
     SIN_DISCREPANCIAS = 'sin_discrepancias', 'Sin Discrepancias'
     CONSOLIDADO = 'consolidado', 'Consolidado'
@@ -69,12 +70,19 @@ class EstadoCierre(models.TextChoices):
         return [
             cls.CARGA_ARCHIVOS,
             cls.ARCHIVOS_LISTOS,
+            cls.COMPARANDO,
             cls.CON_DISCREPANCIAS,
             cls.SIN_DISCREPANCIAS,
             cls.CONSOLIDADO,
             cls.CON_INCIDENCIAS,
             cls.SIN_INCIDENCIAS,
         ]
+    
+    @classmethod
+    @property
+    def ESTADOS_PROCESANDO(cls):
+        """Estados donde hay un task Celery en progreso."""
+        return [cls.COMPARANDO]
     
     @classmethod
     @property

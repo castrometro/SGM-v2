@@ -2,23 +2,25 @@
  * Página de detalle de cierre
  * Muestra el progreso del cierre y permite ejecutar las acciones según el estado
  * 
- * Flujo de 8 estados:
- *   1. CARGA_ARCHIVOS (hub) → 1b. ARCHIVOS_LISTOS → 2. CON/SIN_DISCREPANCIAS → 
- *   3. CONSOLIDADO → 4. CON/SIN_INCIDENCIAS → 5. FINALIZADO
+ * Flujo de 9 estados:
+ *   1. CARGA_ARCHIVOS (hub) → 1b. ARCHIVOS_LISTOS → 1c. COMPARANDO →
+ *   2. CON/SIN_DISCREPANCIAS → 3. CONSOLIDADO → 4. CON/SIN_INCIDENCIAS → 5. FINALIZADO
  */
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, FileCheck2, Upload, GitCompare, FileText, CheckCircle, AlertTriangle, AlertCircle, Loader2, RotateCcw } from 'lucide-react'
+import { ArrowLeft, FileCheck2, Upload, GitCompare, FileText, CheckCircle, AlertTriangle, AlertCircle, Loader2, RotateCcw, Search } from 'lucide-react'
 import api from '../../../api/axios'
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui'
 import Badge from '../../../components/ui/Badge'
 import { CargaArchivos } from '../components'
+import { useGenerarDiscrepancias, useDiscrepancias, TIPOS_DISCREPANCIA, ORIGENES_DISCREPANCIA } from '../hooks'
 
-// Mapa de estados con labels, colores y paso en el stepper (8 estados)
+// Mapa de estados con labels, colores y paso en el stepper (9 estados)
 const ESTADOS = {
   carga_archivos: { label: 'Carga de Archivos', color: 'info', step: 1, icon: Upload },
   archivos_listos: { label: 'Archivos Listos', color: 'info', step: 1, icon: FileCheck2 },
+  comparando: { label: 'Generando Discrepancias', color: 'warning', step: 2, icon: Search },
   con_discrepancias: { label: 'Con Discrepancias', color: 'danger', step: 2, icon: AlertTriangle },
   sin_discrepancias: { label: 'Sin Discrepancias', color: 'success', step: 3, icon: CheckCircle },
   consolidado: { label: 'Consolidado', color: 'info', step: 4, icon: FileText },
@@ -43,6 +45,7 @@ const getStepperStep = (estado) => {
   switch (estado) {
     case 'carga_archivos':
     case 'archivos_listos': return 1
+    case 'comparando':
     case 'con_discrepancias':
     case 'sin_discrepancias': return 2
     case 'consolidado': return 3
@@ -87,13 +90,22 @@ const CierreDetailPage = () => {
       case 'carga_archivos':
         return <CargaArchivos cierreId={id} cierre={cierre} onUpdate={refetch} />
       
-      // Estado 1b: Archivos listos - mostrar panel para generar comparación
+      // Estado 1b: Archivos listos - mostrar panel para generar discrepancias
       case 'archivos_listos':
         return (
           <ArchivosListosPanel 
+            cierreId={id}
             cierre={cierre}
-            onGenerarComparacion={() => handleGenerarComparacion()}
             onVolver={() => handleVolverACarga()}
+          />
+        )
+      
+      // Estado 1c: Comparando - mostrar progreso del task
+      case 'comparando':
+        return (
+          <ComparandoPanel 
+            cierreId={id}
+            cierre={cierre}
           />
         )
       
@@ -101,6 +113,7 @@ const CierreDetailPage = () => {
       case 'con_discrepancias':
         return (
           <DiscrepanciasPanel 
+            cierreId={id}
             cierre={cierre}
             onVolver={() => handleVolverACarga()}
           />
@@ -192,15 +205,6 @@ const CierreDetailPage = () => {
       refetch()
     } catch (error) {
       console.error('Error al volver a carga:', error)
-    }
-  }
-
-  const handleGenerarComparacion = async () => {
-    try {
-      await api.post(`/v1/validador/cierres/${id}/generar_comparacion/`)
-      refetch()
-    } catch (error) {
-      console.error('Error al generar comparación:', error)
     }
   }
 
@@ -347,8 +351,24 @@ const PlaceholderStep = ({ icon: Icon, title, description, variant = 'default' }
 
 /**
  * Panel de discrepancias - Estado: CON_DISCREPANCIAS
+ * Muestra tabla con todas las discrepancias agrupadas por origen
  */
-const DiscrepanciasPanel = ({ cierre, onVolver }) => {
+const DiscrepanciasPanel = ({ cierreId, cierre, onVolver }) => {
+  const [filtroOrigen, setFiltroOrigen] = useState('todos')
+  const [filtroTipo, setFiltroTipo] = useState('todos')
+  
+  const { data: discrepancias, isLoading } = useDiscrepancias(cierreId, {
+    ...(filtroOrigen !== 'todos' && { origen: filtroOrigen }),
+    ...(filtroTipo !== 'todos' && { tipo: filtroTipo }),
+  })
+
+  // Agrupar discrepancias por origen para resumen
+  const resumen = discrepancias?.results ? {
+    libro_vs_novedades: discrepancias.results.filter(d => d.origen === 'libro_vs_novedades').length,
+    movimientos_vs_analista: discrepancias.results.filter(d => d.origen === 'movimientos_vs_analista').length,
+    total: discrepancias.results.length,
+  } : { libro_vs_novedades: 0, movimientos_vs_analista: 0, total: 0 }
+
   return (
     <Card>
       <CardHeader>
@@ -356,6 +376,7 @@ const DiscrepanciasPanel = ({ cierre, onVolver }) => {
           <CardTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-red-400" />
             Discrepancias Encontradas
+            <Badge variant="danger" className="ml-2">{resumen.total}</Badge>
           </CardTitle>
           <button
             onClick={onVolver}
@@ -367,11 +388,101 @@ const DiscrepanciasPanel = ({ cierre, onVolver }) => {
         </div>
       </CardHeader>
       <CardContent>
-        <div className="text-center py-8 text-secondary-400">
-          <AlertTriangle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-          <p>Se encontraron diferencias entre el libro ERP y las novedades.</p>
-          <p className="text-sm mt-2">Tabla de discrepancias (implementación pendiente)</p>
+        {/* Resumen por origen */}
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="bg-secondary-800 rounded-lg p-4">
+            <p className="text-sm text-secondary-400">Libro vs Novedades</p>
+            <p className="text-2xl font-bold text-secondary-100">{resumen.libro_vs_novedades}</p>
+          </div>
+          <div className="bg-secondary-800 rounded-lg p-4">
+            <p className="text-sm text-secondary-400">Movimientos vs Analista</p>
+            <p className="text-2xl font-bold text-secondary-100">{resumen.movimientos_vs_analista}</p>
+          </div>
         </div>
+
+        {/* Filtros */}
+        <div className="flex gap-4 mb-4">
+          <select
+            value={filtroOrigen}
+            onChange={(e) => setFiltroOrigen(e.target.value)}
+            className="bg-secondary-800 border border-secondary-700 rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="todos">Todos los orígenes</option>
+            {ORIGENES_DISCREPANCIA.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <select
+            value={filtroTipo}
+            onChange={(e) => setFiltroTipo(e.target.value)}
+            className="bg-secondary-800 border border-secondary-700 rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="todos">Todos los tipos</option>
+            {TIPOS_DISCREPANCIA.map(t => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Tabla de discrepancias */}
+        {isLoading ? (
+          <div className="text-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary-400" />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-secondary-700">
+                  <th className="text-left py-3 px-4 text-secondary-400 font-medium">RUT</th>
+                  <th className="text-left py-3 px-4 text-secondary-400 font-medium">Nombre</th>
+                  <th className="text-left py-3 px-4 text-secondary-400 font-medium">Origen</th>
+                  <th className="text-left py-3 px-4 text-secondary-400 font-medium">Tipo</th>
+                  <th className="text-right py-3 px-4 text-secondary-400 font-medium">Monto ERP</th>
+                  <th className="text-right py-3 px-4 text-secondary-400 font-medium">Monto Cliente</th>
+                  <th className="text-right py-3 px-4 text-secondary-400 font-medium">Diferencia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {discrepancias?.results?.map((d) => (
+                  <tr key={d.id} className="border-b border-secondary-800 hover:bg-secondary-800/50">
+                    <td className="py-3 px-4 font-mono text-secondary-300">{d.rut_empleado}</td>
+                    <td className="py-3 px-4 text-secondary-200">{d.nombre_empleado || '-'}</td>
+                    <td className="py-3 px-4">
+                      <Badge variant="secondary" className="text-xs">
+                        {ORIGENES_DISCREPANCIA.find(o => o.value === d.origen)?.label || d.origen}
+                      </Badge>
+                    </td>
+                    <td className="py-3 px-4">
+                      <Badge 
+                        variant={TIPOS_DISCREPANCIA.find(t => t.value === d.tipo)?.color || 'default'}
+                        className="text-xs"
+                      >
+                        {TIPOS_DISCREPANCIA.find(t => t.value === d.tipo)?.label || d.tipo}
+                      </Badge>
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono text-secondary-300">
+                      {d.monto_erp ? `$${Number(d.monto_erp).toLocaleString('es-CL')}` : '-'}
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono text-secondary-300">
+                      {d.monto_cliente ? `$${Number(d.monto_cliente).toLocaleString('es-CL')}` : '-'}
+                    </td>
+                    <td className={`py-3 px-4 text-right font-mono font-medium ${
+                      d.diferencia > 0 ? 'text-green-400' : d.diferencia < 0 ? 'text-red-400' : 'text-secondary-400'
+                    }`}>
+                      {d.diferencia ? `$${Number(d.diferencia).toLocaleString('es-CL')}` : '-'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {discrepancias?.results?.length === 0 && (
+              <div className="text-center py-8 text-secondary-400">
+                No hay discrepancias con los filtros seleccionados
+              </div>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   )
@@ -379,19 +490,10 @@ const DiscrepanciasPanel = ({ cierre, onVolver }) => {
 
 /**
  * Panel para archivos listos - Estado: ARCHIVOS_LISTOS
- * Muestra resumen y botón para generar comparación
+ * Muestra resumen y botón para generar discrepancias
  */
-const ArchivosListosPanel = ({ cierre, onGenerarComparacion, onVolver }) => {
-  const [isGenerating, setIsGenerating] = useState(false)
-
-  const handleGenerarClick = async () => {
-    setIsGenerating(true)
-    try {
-      await onGenerarComparacion()
-    } finally {
-      setIsGenerating(false)
-    }
-  }
+const ArchivosListosPanel = ({ cierreId, cierre, onVolver }) => {
+  const { generarDiscrepancias, progreso, isGenerating, isStarting, error } = useGenerarDiscrepancias(cierreId)
 
   return (
     <Card>
@@ -408,35 +510,119 @@ const ArchivosListosPanel = ({ cierre, onGenerarComparacion, onVolver }) => {
           <p className="text-secondary-400 mb-6">
             Los archivos han sido cargados y procesados correctamente.
             <br />
-            Puedes continuar generando la comparación entre el ERP y las novedades.
+            Puedes continuar generando las discrepancias entre el ERP y los archivos del analista.
           </p>
+          
+          {error && (
+            <div className="mb-4 p-3 bg-red-900/30 border border-red-700 rounded-lg text-red-400 text-sm">
+              {error}
+            </div>
+          )}
+          
           <div className="flex items-center justify-center gap-4">
             <button
               onClick={onVolver}
-              disabled={isGenerating}
+              disabled={isGenerating || isStarting}
               className="flex items-center gap-2 px-4 py-2 text-sm bg-secondary-700 hover:bg-secondary-600 rounded-lg transition-colors disabled:opacity-50"
             >
               <RotateCcw className="h-4 w-4" />
               Volver a Carga
             </button>
             <button
-              onClick={handleGenerarClick}
-              disabled={isGenerating}
+              onClick={generarDiscrepancias}
+              disabled={isGenerating || isStarting}
               className="flex items-center gap-2 px-6 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
             >
-              {isGenerating ? (
+              {isStarting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Generando...
+                  Iniciando...
                 </>
               ) : (
                 <>
-                  <GitCompare className="h-4 w-4" />
-                  Generar Comparación
+                  <Search className="h-4 w-4" />
+                  Generar Discrepancias
                 </>
               )}
             </button>
           </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * Panel de comparación en progreso - Estado: COMPARANDO
+ * Muestra barra de progreso y mensajes del task Celery
+ */
+const ComparandoPanel = ({ cierreId, cierre }) => {
+  const { progreso } = useGenerarDiscrepancias(cierreId)
+
+  // Mapeo de fases a iconos y colores
+  const faseInfo = {
+    preparacion: { label: 'Preparando datos', icon: Loader2 },
+    libro_vs_novedades: { label: 'Comparando Libro vs Novedades', icon: GitCompare },
+    movimientos: { label: 'Comparando Movimientos', icon: GitCompare },
+    finalizando: { label: 'Finalizando', icon: CheckCircle },
+    completado: { label: 'Completado', icon: CheckCircle },
+  }
+
+  const fase = faseInfo[progreso.fase] || faseInfo.preparacion
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Search className="h-5 w-5 text-yellow-400 animate-pulse" />
+          Generando Discrepancias
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="py-8">
+          {/* Icono animado */}
+          <div className="flex justify-center mb-6">
+            <div className="relative">
+              <GitCompare className="h-16 w-16 text-primary-400" />
+              <div className="absolute -bottom-1 -right-1 bg-secondary-900 rounded-full p-1">
+                <Loader2 className="h-5 w-5 text-yellow-400 animate-spin" />
+              </div>
+            </div>
+          </div>
+
+          {/* Mensaje de fase actual */}
+          <p className="text-center text-lg text-secondary-200 mb-2">
+            {fase.label}
+          </p>
+          <p className="text-center text-sm text-secondary-400 mb-6">
+            {progreso.mensaje}
+          </p>
+
+          {/* Barra de progreso */}
+          <div className="max-w-md mx-auto">
+            <div className="flex justify-between text-sm text-secondary-400 mb-2">
+              <span>Progreso</span>
+              <span>{progreso.progreso}%</span>
+            </div>
+            <div className="h-3 bg-secondary-700 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-gradient-to-r from-primary-600 to-primary-400 rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${progreso.progreso}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Info adicional si está disponible */}
+          {progreso.resultado && (
+            <div className="mt-6 p-4 bg-secondary-800 rounded-lg max-w-md mx-auto">
+              <p className="text-sm text-secondary-400">
+                Discrepancias encontradas: 
+                <span className="font-bold text-secondary-200 ml-2">
+                  {progreso.resultado.total_discrepancias}
+                </span>
+              </p>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

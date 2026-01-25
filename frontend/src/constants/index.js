@@ -69,13 +69,14 @@ export const PUEDEN_SER_SUPERVISORES = Object.freeze([
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Estados del proceso de cierre de nómina (8 estados principales).
+ * Estados del proceso de cierre de nómina (9 estados principales).
  * 
  * Flujo principal:
  *   CARGA_ARCHIVOS (hub único: ERP + clasificación + novedades + mapeo)
  *   → [Automático cuando archivos listos]
  *   → ARCHIVOS_LISTOS
- *   → [Click manual: Generar Comparación]
+ *   → [Click manual: Generar Discrepancias]
+ *   → COMPARANDO (task Celery en progreso)
  *   → CON_DISCREPANCIAS / SIN_DISCREPANCIAS
  *   → [Click manual] → CONSOLIDADO
  *   → [Detectar Incidencias manual]
@@ -85,12 +86,14 @@ export const PUEDEN_SER_SUPERVISORES = Object.freeze([
  * IMPORTANTE:
  * - CARGA_ARCHIVOS es el hub donde se hace todo el trabajo de preparación
  * - Transición a ARCHIVOS_LISTOS es automática cuando todos los archivos están procesados
+ * - COMPARANDO es estado transitorio mientras Celery genera discrepancias
  * - SIN_DISCREPANCIAS requiere click manual para pasar a CONSOLIDADO
  * - Se puede volver a CARGA_ARCHIVOS desde ARCHIVOS_LISTOS/CON/SIN_DISCREPANCIAS
  */
 export const ESTADO_CIERRE = Object.freeze({
   CARGA_ARCHIVOS: 'carga_archivos',       // Hub único: ERP + clasificación + novedades + mapeo
   ARCHIVOS_LISTOS: 'archivos_listos',     // Todos los archivos procesados, listo para comparar
+  COMPARANDO: 'comparando',               // Task Celery generando discrepancias
   CON_DISCREPANCIAS: 'con_discrepancias', // Hay diferencias por resolver
   SIN_DISCREPANCIAS: 'sin_discrepancias', // 0 discrepancias, requiere click manual
   CONSOLIDADO: 'consolidado',             // Datos validados y confirmados
@@ -107,11 +110,19 @@ export const ESTADO_CIERRE = Object.freeze({
 export const ESTADOS_CIERRE_ACTIVOS = Object.freeze([
   ESTADO_CIERRE.CARGA_ARCHIVOS,
   ESTADO_CIERRE.ARCHIVOS_LISTOS,
+  ESTADO_CIERRE.COMPARANDO,
   ESTADO_CIERRE.CON_DISCREPANCIAS,
   ESTADO_CIERRE.SIN_DISCREPANCIAS,
   ESTADO_CIERRE.CONSOLIDADO,
   ESTADO_CIERRE.CON_INCIDENCIAS,
   ESTADO_CIERRE.SIN_INCIDENCIAS,
+])
+
+/**
+ * Estados donde hay un task Celery en progreso (requieren polling)
+ */
+export const ESTADOS_CIERRE_PROCESANDO = Object.freeze([
+  ESTADO_CIERRE.COMPARANDO,
 ])
 
 /**
