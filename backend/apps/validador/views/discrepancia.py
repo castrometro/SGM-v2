@@ -6,6 +6,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.pagination import PageNumberPagination
 from django.db.models import Count, Q
 
 from ..models import Discrepancia
@@ -15,11 +16,19 @@ from ..serializers import (
 )
 
 
+class DiscrepanciaPagination(PageNumberPagination):
+    """Paginación para discrepancias - hasta 500 por página."""
+    page_size = 500
+    page_size_query_param = 'page_size'
+    max_page_size = 1000
+
+
 class DiscrepanciaViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet de solo lectura para discrepancias."""
     
     permission_classes = [IsAuthenticated]
     serializer_class = DiscrepanciaSerializer
+    pagination_class = DiscrepanciaPagination
     
     def get_queryset(self):
         queryset = Discrepancia.objects.select_related(

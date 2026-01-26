@@ -13,13 +13,10 @@ class MovimientoMes(models.Model):
     """
     
     TIPO_CHOICES = [
-        ('alta', 'Alta/Ingreso'),
-        ('baja', 'Baja/Finiquito'),
-        ('licencia', 'Licencia Médica'),
+        ('ingreso', 'Ingreso'),
+        ('finiquito', 'Finiquito'),
         ('vacaciones', 'Vacaciones'),
-        ('permiso', 'Permiso'),
-        ('ausencia', 'Ausencia'),
-        ('otro', 'Otro'),
+        ('asistencia', 'Asistencia'),
     ]
     
     cierre = models.ForeignKey(

@@ -116,13 +116,13 @@ class TalanaStrategy(ERPStrategy):
     
     # Mapeo de Tipo de Ausentismo -> (tipo, tipo_licencia)
     MAPEO_TIPO_AUSENTISMO = {
-        'permiso con goce': ('permiso', 'con_goce'),
-        'permiso sin goce': ('permiso', 'sin_goce'),
-        'licencia medica': ('licencia', 'medica'),
-        'licencia médica': ('licencia', 'medica'),
-        'licencia maternal': ('licencia', 'maternal'),
-        'ausencia no justificada': ('ausencia', ''),
-        'ausencia injustificada': ('ausencia', ''),
+        'permiso con goce': ('asistencia', 'permiso_con_goce'),
+        'permiso sin goce': ('asistencia', 'permiso_sin_goce'),
+        'licencia medica': ('asistencia', 'licencia_medica'),
+        'licencia médica': ('asistencia', 'licencia_medica'),
+        'licencia maternal': ('asistencia', 'licencia_maternal'),
+        'ausencia no justificada': ('asistencia', 'ausencia'),
+        'ausencia injustificada': ('asistencia', 'ausencia'),
     }
     
     def get_tipos_archivo_soportados(self) -> list[str]:
@@ -282,13 +282,13 @@ class TalanaStrategy(ERPStrategy):
             tipo_contrato = str(row.get('tipo_contrato', '')).strip()
             causal = str(row.get('causal', '')).strip() if pd.notna(row.get('causal')) else ''
             
-            # Determinar tipo (alta o baja)
+            # Determinar tipo (ingreso o finiquito)
             if tipo_mov == 'alta':
-                tipo = 'alta'
+                tipo = 'ingreso'
                 fecha_inicio = self._parse_fecha(row.get('fecha_inicio'))
                 fecha_fin = None
             elif tipo_mov == 'baja':
-                tipo = 'baja'
+                tipo = 'finiquito'
                 fecha_inicio = None
                 fecha_fin = self._parse_fecha(row.get('fecha_fin'))
                 

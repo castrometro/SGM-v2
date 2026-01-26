@@ -11,11 +11,6 @@ class DiscrepanciaSerializer(serializers.ModelSerializer):
     
     tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
     origen_display = serializers.CharField(source='get_origen_display', read_only=True)
-    concepto_nombre = serializers.CharField(
-        source='concepto.nombre_erp',
-        read_only=True,
-        allow_null=True
-    )
     
     class Meta:
         model = Discrepancia
@@ -23,7 +18,7 @@ class DiscrepanciaSerializer(serializers.ModelSerializer):
             'id', 'cierre', 'tipo', 'tipo_display',
             'origen', 'origen_display',
             'rut_empleado', 'nombre_empleado',
-            'concepto', 'concepto_nombre', 'nombre_item',
+            'nombre_item', 'nombre_item_novedades',
             'monto_erp', 'monto_cliente', 'diferencia',
             'tipo_movimiento', 'detalle_movimiento',
             'resuelta', 'fecha_resolucion',

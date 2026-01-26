@@ -344,14 +344,26 @@ def _procesar_novedades(archivo):
     
     # Buscar columnas clave
     rut_col = next((col for col in df.columns if 'rut' in col.lower()), None)
-    nombre_col = next((col for col in df.columns if 'nombre' in col.lower()), None)
+    # Buscar columna de nombre con múltiples variantes
+    nombre_col = None
+    for col in df.columns:
+        col_lower = col.lower()
+        if 'nombre' in col_lower or 'empleado' in col_lower or 'trabajador' in col_lower:
+            nombre_col = col
+            break
     
     if not rut_col:
         raise ValueError("No se encontró columna de RUT en el archivo de Novedades")
     
+    logger.info(f"Columnas detectadas - RUT: '{rut_col}', Nombre: '{nombre_col or 'NO ENCONTRADA'}'")
+    
     # Columnas que son items (no son identificación)
-    columnas_id = ['rut', 'nombre', 'fecha', 'periodo']
-    columnas_item = [col for col in df.columns if col.lower().strip() not in columnas_id]
+    # Excluir columnas de RUT y nombre detectadas, más otras comunes
+    columnas_excluir = {rut_col.lower().strip() if rut_col else ''}
+    if nombre_col:
+        columnas_excluir.add(nombre_col.lower().strip())
+    columnas_excluir.update(['rut', 'nombre', 'fecha', 'periodo', 'observacion', 'observaciones'])
+    columnas_item = [col for col in df.columns if col.lower().strip() not in columnas_excluir]
     
     # Pre-cargar ConceptoNovedades del cliente para evitar N+1 queries
     conceptos_dict = {}
@@ -370,7 +382,11 @@ def _procesar_novedades(archivo):
         if not rut or rut == 'nan':
             continue
         
-        nombre = str(row[nombre_col]).strip() if nombre_col else ''
+        # Extraer nombre, manejando NaN de pandas
+        if nombre_col and pd.notna(row[nombre_col]):
+            nombre = str(row[nombre_col]).strip()
+        else:
+            nombre = ''
         
         for nombre_item in columnas_item:
             try:

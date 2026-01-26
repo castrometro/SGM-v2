@@ -6,10 +6,10 @@
  *   1. CARGA_ARCHIVOS (hub) → 1b. ARCHIVOS_LISTOS → 1c. COMPARANDO →
  *   2. CON/SIN_DISCREPANCIAS → 3. CONSOLIDADO → 4. CON/SIN_INCIDENCIAS → 5. FINALIZADO
  */
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, FileCheck2, Upload, GitCompare, FileText, CheckCircle, AlertTriangle, AlertCircle, Loader2, RotateCcw, Search } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, FileCheck2, Upload, GitCompare, FileText, CheckCircle, AlertTriangle, AlertCircle, Loader2, RotateCcw, Search, ChevronLeft, ChevronRight, Filter } from 'lucide-react'
 import api from '../../../api/axios'
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui'
 import Badge from '../../../components/ui/Badge'
@@ -205,6 +205,7 @@ const CierreDetailPage = () => {
       refetch()
     } catch (error) {
       console.error('Error al volver a carga:', error)
+      alert(error.response?.data?.error || 'Error al volver a carga de archivos')
     }
   }
 
@@ -214,6 +215,7 @@ const CierreDetailPage = () => {
       refetch()
     } catch (error) {
       console.error('Error al consolidar:', error)
+      alert(error.response?.data?.error || 'Error al consolidar')
     }
   }
 
@@ -351,23 +353,22 @@ const PlaceholderStep = ({ icon: Icon, title, description, variant = 'default' }
 
 /**
  * Panel de discrepancias - Estado: CON_DISCREPANCIAS
- * Muestra tabla con todas las discrepancias agrupadas por origen
+ * Muestra tabs separadas para Montos y Movimientos
  */
 const DiscrepanciasPanel = ({ cierreId, cierre, onVolver }) => {
-  const [filtroOrigen, setFiltroOrigen] = useState('todos')
-  const [filtroTipo, setFiltroTipo] = useState('todos')
+  const [activeTab, setActiveTab] = useState('montos')
   
-  const { data: discrepancias, isLoading } = useDiscrepancias(cierreId, {
-    ...(filtroOrigen !== 'todos' && { origen: filtroOrigen }),
-    ...(filtroTipo !== 'todos' && { tipo: filtroTipo }),
+  // Cargar discrepancias separadas por origen
+  const { data: discrepanciasMontos, isLoading: loadingMontos } = useDiscrepancias(cierreId, {
+    origen: 'libro_vs_novedades'
+  })
+  
+  const { data: discrepanciasMovimientos, isLoading: loadingMovimientos } = useDiscrepancias(cierreId, {
+    origen: 'movimientos_vs_analista'
   })
 
-  // Agrupar discrepancias por origen para resumen
-  const resumen = discrepancias?.results ? {
-    libro_vs_novedades: discrepancias.results.filter(d => d.origen === 'libro_vs_novedades').length,
-    movimientos_vs_analista: discrepancias.results.filter(d => d.origen === 'movimientos_vs_analista').length,
-    total: discrepancias.results.length,
-  } : { libro_vs_novedades: 0, movimientos_vs_analista: 0, total: 0 }
+  const countMontos = discrepanciasMontos?.results?.length || 0
+  const countMovimientos = discrepanciasMovimientos?.results?.length || 0
 
   return (
     <Card>
@@ -376,7 +377,7 @@ const DiscrepanciasPanel = ({ cierreId, cierre, onVolver }) => {
           <CardTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-red-400" />
             Discrepancias Encontradas
-            <Badge variant="danger" className="ml-2">{resumen.total}</Badge>
+            <Badge variant="danger" className="ml-2">{countMontos + countMovimientos}</Badge>
           </CardTitle>
           <button
             onClick={onVolver}
@@ -388,103 +389,366 @@ const DiscrepanciasPanel = ({ cierreId, cierre, onVolver }) => {
         </div>
       </CardHeader>
       <CardContent>
-        {/* Resumen por origen */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <div className="bg-secondary-800 rounded-lg p-4">
-            <p className="text-sm text-secondary-400">Libro vs Novedades</p>
-            <p className="text-2xl font-bold text-secondary-100">{resumen.libro_vs_novedades}</p>
-          </div>
-          <div className="bg-secondary-800 rounded-lg p-4">
-            <p className="text-sm text-secondary-400">Movimientos vs Analista</p>
-            <p className="text-2xl font-bold text-secondary-100">{resumen.movimientos_vs_analista}</p>
-          </div>
+        {/* Tabs */}
+        <div className="flex gap-2 mb-6 border-b border-secondary-700">
+          <button
+            onClick={() => setActiveTab('montos')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'montos'
+                ? 'border-primary-500 text-primary-400'
+                : 'border-transparent text-secondary-400 hover:text-secondary-200'
+            }`}
+          >
+            Novedades vs Libro
+            <Badge variant={countMontos > 0 ? 'warning' : 'secondary'} className="ml-2 text-xs">
+              {countMontos}
+            </Badge>
+          </button>
+          <button
+            onClick={() => setActiveTab('movimientos')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'movimientos'
+                ? 'border-primary-500 text-primary-400'
+                : 'border-transparent text-secondary-400 hover:text-secondary-200'
+            }`}
+          >
+            Movimientos
+            <Badge variant={countMovimientos > 0 ? 'warning' : 'secondary'} className="ml-2 text-xs">
+              {countMovimientos}
+            </Badge>
+          </button>
         </div>
 
-        {/* Filtros */}
-        <div className="flex gap-4 mb-4">
-          <select
-            value={filtroOrigen}
-            onChange={(e) => setFiltroOrigen(e.target.value)}
-            className="bg-secondary-800 border border-secondary-700 rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="todos">Todos los orígenes</option>
-            {ORIGENES_DISCREPANCIA.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+        {/* Contenido según tab activa */}
+        {activeTab === 'montos' ? (
+          <TablaMontos discrepancias={discrepanciasMontos?.results} isLoading={loadingMontos} />
+        ) : (
+          <TablaMovimientos discrepancias={discrepanciasMovimientos?.results} isLoading={loadingMovimientos} />
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * Tabla de diferencias de montos (Libro vs Novedades) con filtros y paginación
+ */
+const TablaMontos = ({ discrepancias, isLoading }) => {
+  const [filtroRut, setFiltroRut] = useState('')
+  const [filtroConcepto, setFiltroConcepto] = useState('')
+  const [page, setPage] = useState(1)
+  const pageSize = 20
+
+  // Filtrar discrepancias
+  const filtradas = useMemo(() => {
+    if (!discrepancias) return []
+    return discrepancias.filter(d => {
+      const matchRut = !filtroRut || d.rut_empleado?.toLowerCase().includes(filtroRut.toLowerCase())
+      const matchConcepto = !filtroConcepto || 
+        d.nombre_item?.toLowerCase().includes(filtroConcepto.toLowerCase()) ||
+        d.nombre_item_novedades?.toLowerCase().includes(filtroConcepto.toLowerCase())
+      return matchRut && matchConcepto
+    })
+  }, [discrepancias, filtroRut, filtroConcepto])
+
+  // Paginación
+  const totalPages = Math.ceil(filtradas.length / pageSize)
+  const paginadas = filtradas.slice((page - 1) * pageSize, page * pageSize)
+
+  // Reset page when filters change
+  useMemo(() => setPage(1), [filtroRut, filtroConcepto])
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-8">
+        <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary-400" />
+      </div>
+    )
+  }
+
+  if (!discrepancias?.length) {
+    return (
+      <div className="text-center py-8 text-secondary-400">
+        No hay diferencias de montos
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {/* Filtros */}
+      <div className="flex gap-4 mb-4">
+        <div className="flex-1 max-w-xs">
+          <input
+            type="text"
+            placeholder="Filtrar por RUT..."
+            value={filtroRut}
+            onChange={(e) => setFiltroRut(e.target.value)}
+            className="w-full px-3 py-2 bg-secondary-800 border border-secondary-700 rounded-lg text-sm text-secondary-200 placeholder-secondary-500 focus:outline-none focus:border-primary-500"
+          />
+        </div>
+        <div className="flex-1 max-w-xs">
+          <input
+            type="text"
+            placeholder="Filtrar por concepto..."
+            value={filtroConcepto}
+            onChange={(e) => setFiltroConcepto(e.target.value)}
+            className="w-full px-3 py-2 bg-secondary-800 border border-secondary-700 rounded-lg text-sm text-secondary-200 placeholder-secondary-500 focus:outline-none focus:border-primary-500"
+          />
+        </div>
+        <div className="text-sm text-secondary-400 self-center">
+          {filtradas.length} de {discrepancias.length} registros
+        </div>
+      </div>
+
+      {/* Tabla */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-secondary-700">
+              <th className="text-left py-3 px-4 text-secondary-400 font-medium">RUT</th>
+              <th className="text-left py-3 px-4 text-secondary-400 font-medium">Nombre</th>
+              <th className="text-left py-3 px-4 text-secondary-400 font-medium">Concepto Libro</th>
+              <th className="text-left py-3 px-4 text-secondary-400 font-medium">Concepto Novedades</th>
+              <th className="text-right py-3 px-4 text-secondary-400 font-medium">Monto Libro</th>
+              <th className="text-right py-3 px-4 text-secondary-400 font-medium">Monto Novedades</th>
+              <th className="text-right py-3 px-4 text-secondary-400 font-medium">Diferencia</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paginadas.map((d) => (
+              <tr key={d.id} className="border-b border-secondary-800 hover:bg-secondary-800/50">
+                <td className="py-3 px-4 font-mono text-secondary-300">{d.rut_empleado}</td>
+                <td className="py-3 px-4 text-secondary-200">{d.nombre_empleado || '-'}</td>
+                <td className="py-3 px-4 text-secondary-200">{d.nombre_item || '-'}</td>
+                <td className="py-3 px-4 text-secondary-200">{d.nombre_item_novedades || '-'}</td>
+                <td className="py-3 px-4 text-right font-mono text-secondary-300">
+                  {d.monto_erp ? `$${Number(d.monto_erp).toLocaleString('es-CL')}` : '-'}
+                </td>
+                <td className="py-3 px-4 text-right font-mono text-secondary-300">
+                  {d.monto_cliente ? `$${Number(d.monto_cliente).toLocaleString('es-CL')}` : '-'}
+                </td>
+                <td className={`py-3 px-4 text-right font-mono font-medium ${
+                  d.diferencia > 0 ? 'text-green-400' : d.diferencia < 0 ? 'text-red-400' : 'text-secondary-400'
+                }`}>
+                  {d.diferencia ? `$${Number(d.diferencia).toLocaleString('es-CL')}` : '-'}
+                </td>
+              </tr>
             ))}
-          </select>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Paginación */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4 pt-4 border-t border-secondary-700">
+          <div className="text-sm text-secondary-400">
+            Página {page} de {totalPages}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="p-2 rounded-lg bg-secondary-800 hover:bg-secondary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="p-2 rounded-lg bg-secondary-800 hover:bg-secondary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Tabla de diferencias de movimientos con filtros y paginación
+ */
+const TablaMovimientos = ({ discrepancias, isLoading }) => {
+  const [filtroRut, setFiltroRut] = useState('')
+  const [filtroTipo, setFiltroTipo] = useState('')
+  const [filtroDonde, setFiltroDonde] = useState('')
+  const [page, setPage] = useState(1)
+  const pageSize = 20
+
+  const tiposMovimiento = [
+    { value: '', label: 'Todos' },
+    { value: 'ingreso', label: 'Ingreso' },
+    { value: 'finiquito', label: 'Finiquito' },
+    { value: 'vacaciones', label: 'Vacaciones' },
+    { value: 'asistencia', label: 'Asistencia' },
+  ]
+
+  const opcionesDonde = [
+    { value: '', label: 'Todos' },
+    { value: 'falta_en_erp', label: 'Falta en ERP' },
+    { value: 'falta_en_cliente', label: 'Falta en Cliente' },
+  ]
+
+  // Filtrar discrepancias
+  const filtradas = useMemo(() => {
+    if (!discrepancias) return []
+    return discrepancias.filter(d => {
+      const matchRut = !filtroRut || d.rut_empleado?.toLowerCase().includes(filtroRut.toLowerCase())
+      const matchTipo = !filtroTipo || d.tipo_movimiento === filtroTipo
+      const matchDonde = !filtroDonde || d.tipo === filtroDonde
+      return matchRut && matchTipo && matchDonde
+    })
+  }, [discrepancias, filtroRut, filtroTipo, filtroDonde])
+
+  // Paginación
+  const totalPages = Math.ceil(filtradas.length / pageSize)
+  const paginadas = filtradas.slice((page - 1) * pageSize, page * pageSize)
+
+  // Reset page when filters change
+  useMemo(() => setPage(1), [filtroRut, filtroTipo, filtroDonde])
+
+  const getTipoMovimientoLabel = (tipo) => {
+    const labels = {
+      ingreso: 'Ingreso',
+      finiquito: 'Finiquito',
+      vacaciones: 'Vacaciones',
+      asistencia: 'Asistencia',
+    }
+    return labels[tipo] || tipo
+  }
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-8">
+        <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary-400" />
+      </div>
+    )
+  }
+
+  if (!discrepancias?.length) {
+    return (
+      <div className="text-center py-8 text-secondary-400">
+        No hay diferencias de movimientos
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {/* Filtros */}
+      <div className="flex flex-wrap gap-4 mb-4">
+        <div className="flex-1 min-w-[150px] max-w-xs">
+          <input
+            type="text"
+            placeholder="Filtrar por RUT..."
+            value={filtroRut}
+            onChange={(e) => setFiltroRut(e.target.value)}
+            className="w-full px-3 py-2 bg-secondary-800 border border-secondary-700 rounded-lg text-sm text-secondary-200 placeholder-secondary-500 focus:outline-none focus:border-primary-500"
+          />
+        </div>
+        <div className="min-w-[150px]">
           <select
             value={filtroTipo}
             onChange={(e) => setFiltroTipo(e.target.value)}
-            className="bg-secondary-800 border border-secondary-700 rounded-lg px-3 py-2 text-sm"
+            className="w-full px-3 py-2 bg-secondary-800 border border-secondary-700 rounded-lg text-sm text-secondary-200 focus:outline-none focus:border-primary-500"
           >
-            <option value="todos">Todos los tipos</option>
-            {TIPOS_DISCREPANCIA.map(t => (
+            {tiposMovimiento.map(t => (
               <option key={t.value} value={t.value}>{t.label}</option>
             ))}
           </select>
         </div>
+        <div className="min-w-[150px]">
+          <select
+            value={filtroDonde}
+            onChange={(e) => setFiltroDonde(e.target.value)}
+            className="w-full px-3 py-2 bg-secondary-800 border border-secondary-700 rounded-lg text-sm text-secondary-200 focus:outline-none focus:border-primary-500"
+          >
+            {opcionesDonde.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="text-sm text-secondary-400 self-center">
+          {filtradas.length} de {discrepancias.length} registros
+        </div>
+      </div>
 
-        {/* Tabla de discrepancias */}
-        {isLoading ? (
-          <div className="text-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary-400" />
+      {/* Tabla */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-secondary-700">
+              <th className="text-left py-3 px-4 text-secondary-400 font-medium">RUT</th>
+              <th className="text-left py-3 px-4 text-secondary-400 font-medium">Nombre</th>
+              <th className="text-left py-3 px-4 text-secondary-400 font-medium">Tipo Movimiento</th>
+              <th className="text-left py-3 px-4 text-secondary-400 font-medium">Dónde Falta</th>
+              <th className="text-left py-3 px-4 text-secondary-400 font-medium">Fechas</th>
+              <th className="text-center py-3 px-4 text-secondary-400 font-medium">Días</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paginadas.map((d) => (
+              <tr key={d.id} className="border-b border-secondary-800 hover:bg-secondary-800/50">
+                <td className="py-3 px-4 font-mono text-secondary-300">{d.rut_empleado}</td>
+                <td className="py-3 px-4 text-secondary-200">{d.nombre_empleado || '-'}</td>
+                <td className="py-3 px-4">
+                  <Badge variant="info" className="text-xs">
+                    {getTipoMovimientoLabel(d.tipo_movimiento)}
+                  </Badge>
+                </td>
+                <td className="py-3 px-4">
+                  <Badge 
+                    variant={d.tipo === 'falta_en_cliente' ? 'warning' : 'danger'}
+                    className="text-xs"
+                  >
+                    {d.tipo === 'falta_en_cliente' ? 'Falta en Cliente' : 'Falta en ERP'}
+                  </Badge>
+                </td>
+                <td className="py-3 px-4 text-secondary-300 text-sm">
+                  {d.detalle_movimiento?.fecha_inicio && (
+                    <span>{d.detalle_movimiento.fecha_inicio}</span>
+                  )}
+                  {d.detalle_movimiento?.fecha_fin && (
+                    <span> → {d.detalle_movimiento.fecha_fin}</span>
+                  )}
+                  {!d.detalle_movimiento?.fecha_inicio && !d.detalle_movimiento?.fecha_fin && '-'}
+                </td>
+                <td className="py-3 px-4 text-center text-secondary-300">
+                  {d.detalle_movimiento?.dias || '-'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Paginación */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4 pt-4 border-t border-secondary-700">
+          <div className="text-sm text-secondary-400">
+            Página {page} de {totalPages}
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-secondary-700">
-                  <th className="text-left py-3 px-4 text-secondary-400 font-medium">RUT</th>
-                  <th className="text-left py-3 px-4 text-secondary-400 font-medium">Nombre</th>
-                  <th className="text-left py-3 px-4 text-secondary-400 font-medium">Origen</th>
-                  <th className="text-left py-3 px-4 text-secondary-400 font-medium">Tipo</th>
-                  <th className="text-right py-3 px-4 text-secondary-400 font-medium">Monto ERP</th>
-                  <th className="text-right py-3 px-4 text-secondary-400 font-medium">Monto Cliente</th>
-                  <th className="text-right py-3 px-4 text-secondary-400 font-medium">Diferencia</th>
-                </tr>
-              </thead>
-              <tbody>
-                {discrepancias?.results?.map((d) => (
-                  <tr key={d.id} className="border-b border-secondary-800 hover:bg-secondary-800/50">
-                    <td className="py-3 px-4 font-mono text-secondary-300">{d.rut_empleado}</td>
-                    <td className="py-3 px-4 text-secondary-200">{d.nombre_empleado || '-'}</td>
-                    <td className="py-3 px-4">
-                      <Badge variant="secondary" className="text-xs">
-                        {ORIGENES_DISCREPANCIA.find(o => o.value === d.origen)?.label || d.origen}
-                      </Badge>
-                    </td>
-                    <td className="py-3 px-4">
-                      <Badge 
-                        variant={TIPOS_DISCREPANCIA.find(t => t.value === d.tipo)?.color || 'default'}
-                        className="text-xs"
-                      >
-                        {TIPOS_DISCREPANCIA.find(t => t.value === d.tipo)?.label || d.tipo}
-                      </Badge>
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-secondary-300">
-                      {d.monto_erp ? `$${Number(d.monto_erp).toLocaleString('es-CL')}` : '-'}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-secondary-300">
-                      {d.monto_cliente ? `$${Number(d.monto_cliente).toLocaleString('es-CL')}` : '-'}
-                    </td>
-                    <td className={`py-3 px-4 text-right font-mono font-medium ${
-                      d.diferencia > 0 ? 'text-green-400' : d.diferencia < 0 ? 'text-red-400' : 'text-secondary-400'
-                    }`}>
-                      {d.diferencia ? `$${Number(d.diferencia).toLocaleString('es-CL')}` : '-'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {discrepancias?.results?.length === 0 && (
-              <div className="text-center py-8 text-secondary-400">
-                No hay discrepancias con los filtros seleccionados
-              </div>
-            )}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="p-2 rounded-lg bg-secondary-800 hover:bg-secondary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="p-2 rounded-lg bg-secondary-800 hover:bg-secondary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -557,7 +821,33 @@ const ArchivosListosPanel = ({ cierreId, cierre, onVolver }) => {
  * Muestra barra de progreso y mensajes del task Celery
  */
 const ComparandoPanel = ({ cierreId, cierre }) => {
-  const { progreso } = useGenerarDiscrepancias(cierreId)
+  const queryClient = useQueryClient()
+  
+  // Polling de progreso mientras el cierre esté en estado comparando
+  const { data: progreso } = useQuery({
+    queryKey: ['progreso-comparacion', cierreId],
+    queryFn: async () => {
+      const { data } = await api.get(`/v1/validador/cierres/${cierreId}/progreso-comparacion/`)
+      return data
+    },
+    enabled: !!cierreId,
+    refetchInterval: (query) => {
+      const data = query.state.data
+      // Seguir polling mientras esté comparando
+      if (data?.estado === 'comparando' || !data?.estado) {
+        return 2000 // 2 segundos
+      }
+      // Cuando termina, invalidar cierre para que cambie de estado
+      if (data?.estado === 'completado' || data?.estado === 'error') {
+        queryClient.invalidateQueries({ queryKey: ['cierre', cierreId] })
+        queryClient.invalidateQueries({ queryKey: ['discrepancias', cierreId] })
+        return false
+      }
+      return 2000
+    },
+  })
+
+  const progresoData = progreso || { estado: 'comparando', progreso: 0, mensaje: 'Iniciando comparación...' }
 
   // Mapeo de fases a iconos y colores
   const faseInfo = {
@@ -568,7 +858,7 @@ const ComparandoPanel = ({ cierreId, cierre }) => {
     completado: { label: 'Completado', icon: CheckCircle },
   }
 
-  const fase = faseInfo[progreso.fase] || faseInfo.preparacion
+  const fase = faseInfo[progresoData.fase] || faseInfo.preparacion
 
   return (
     <Card>
@@ -595,30 +885,30 @@ const ComparandoPanel = ({ cierreId, cierre }) => {
             {fase.label}
           </p>
           <p className="text-center text-sm text-secondary-400 mb-6">
-            {progreso.mensaje}
+            {progresoData.mensaje}
           </p>
 
           {/* Barra de progreso */}
           <div className="max-w-md mx-auto">
             <div className="flex justify-between text-sm text-secondary-400 mb-2">
               <span>Progreso</span>
-              <span>{progreso.progreso}%</span>
+              <span>{progresoData.progreso}%</span>
             </div>
             <div className="h-3 bg-secondary-700 rounded-full overflow-hidden">
               <div 
                 className="h-full bg-gradient-to-r from-primary-600 to-primary-400 rounded-full transition-all duration-500 ease-out"
-                style={{ width: `${progreso.progreso}%` }}
+                style={{ width: `${progresoData.progreso}%` }}
               />
             </div>
           </div>
 
           {/* Info adicional si está disponible */}
-          {progreso.resultado && (
+          {progresoData.resultado && (
             <div className="mt-6 p-4 bg-secondary-800 rounded-lg max-w-md mx-auto">
               <p className="text-sm text-secondary-400">
                 Discrepancias encontradas: 
                 <span className="font-bold text-secondary-200 ml-2">
-                  {progreso.resultado.total_discrepancias}
+                  {progresoData.resultado.total_discrepancias}
                 </span>
               </p>
             </div>

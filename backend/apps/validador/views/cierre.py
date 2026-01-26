@@ -273,7 +273,7 @@ class CierreViewSet(viewsets.ModelViewSet):
             'cierre': CierreDetailSerializer(cierre_actualizado).data
         })
     
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'], url_path='volver-a-carga')
     def volver_a_carga(self, request, pk=None):
         """
         Volver a estado CARGA_ARCHIVOS para corregir archivos.

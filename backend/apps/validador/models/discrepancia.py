@@ -15,8 +15,6 @@ class Discrepancia(models.Model):
         ('monto_diferente', 'Monto Diferente'),
         ('falta_en_erp', 'Falta en ERP'),
         ('falta_en_cliente', 'Falta en Archivos Cliente'),
-        ('empleado_no_encontrado', 'Empleado No Encontrado'),
-        ('item_no_mapeado', 'Item No Mapeado'),
     ]
     
     ORIGEN_CHOICES = [
@@ -52,10 +50,16 @@ class Discrepancia(models.Model):
         blank=True,
         related_name='discrepancias'
     )
+    # Nombre del concepto en cada fuente
     nombre_item = models.CharField(
         max_length=200,
         blank=True,
-        help_text='Nombre del item (para casos sin mapeo)'
+        help_text='Nombre del concepto en el Libro (ERP)'
+    )
+    nombre_item_novedades = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text='Nombre del concepto en Novedades (cliente)'
     )
     monto_erp = models.DecimalField(
         max_digits=15,
@@ -96,6 +100,7 @@ class Discrepancia(models.Model):
         ordering = ['-fecha_deteccion']
         indexes = [
             models.Index(fields=['cierre', 'tipo']),
+            models.Index(fields=['cierre', 'origen']),
             models.Index(fields=['cierre', 'resuelta']),
             models.Index(fields=['cierre', 'rut_empleado']),
         ]
@@ -111,29 +116,15 @@ class Discrepancia(models.Model):
     def generar_descripcion(self):
         """Genera una descripción legible de la discrepancia."""
         if self.tipo == 'monto_diferente':
-            item = self.concepto.nombre_erp if self.concepto else self.nombre_item
             self.descripcion = (
-                f"El item '{item}' tiene monto ${self.monto_erp:,.0f} en ERP "
-                f"pero ${self.monto_cliente:,.0f} en archivos del cliente. "
-                f"Diferencia: ${self.diferencia:,.0f}"
+                f"'{self.nombre_item}' (Libro) vs '{self.nombre_item_novedades}' (Novedades): "
+                f"${self.monto_erp:,.0f} vs ${self.monto_cliente:,.0f} = ${self.diferencia:,.0f}"
             )
         elif self.tipo == 'falta_en_erp':
             self.descripcion = (
-                f"El movimiento/item '{self.nombre_item or self.tipo_movimiento}' "
-                f"existe en archivos del cliente pero no en ERP."
+                f"El movimiento '{self.tipo_movimiento}' existe en archivos del cliente pero no en ERP."
             )
         elif self.tipo == 'falta_en_cliente':
             self.descripcion = (
-                f"El movimiento/item '{self.nombre_item or self.tipo_movimiento}' "
-                f"existe en ERP pero no en archivos del cliente."
-            )
-        elif self.tipo == 'empleado_no_encontrado':
-            self.descripcion = (
-                f"El empleado {self.rut_empleado} ({self.nombre_empleado}) "
-                f"no fue encontrado en el Libro de Remuneraciones."
-            )
-        elif self.tipo == 'item_no_mapeado':
-            self.descripcion = (
-                f"El item '{self.nombre_item}' de Novedades no tiene mapeo "
-                f"a ningún concepto del ERP."
+                f"El movimiento '{self.tipo_movimiento}' existe en ERP pero no en archivos del cliente."
             )

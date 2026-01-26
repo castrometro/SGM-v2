@@ -14,6 +14,7 @@ from django.core.cache import cache
 from django.db import models
 from django.utils import timezone
 from decimal import Decimal
+from datetime import date
 import logging
 
 from apps.validador.constants import EstadoCierre
@@ -191,16 +192,11 @@ def _comparar_libro_novedades(cierre, cierre_id):
     """
     Compara el Libro de Remuneraciones con Novedades.
     
-    Detecta:
-    - monto_diferente: El monto en Libro != monto en Novedades
-    - falta_en_erp: Item en Novedades pero no en Libro
-    - falta_en_cliente: Item en Libro pero no en Novedades
-    - item_no_mapeado: Item en Novedades sin mapeo a concepto ERP
+    Solo compara montos por empleado para elementos que están mapeados
+    entre ambas tablas (ConceptoNovedades → ConceptoLibro).
     
-    Relación de modelos:
-    - RegistroNovedades.concepto_novedades → ConceptoNovedades
-    - ConceptoNovedades.concepto_libro → ConceptoLibro (usado para comparar)
-    - RegistroLibro.concepto → ConceptoLibro (directo)
+    Detecta:
+    - monto_diferente: El monto en Libro != monto en Novedades para mismo RUT+concepto
     """
     from apps.validador.models import (
         RegistroNovedades,
@@ -216,8 +212,8 @@ def _comparar_libro_novedades(cierre, cierre_id):
     
     discrepancias_creadas = 0
     
-    # Obtener todos los registros de novedades con mapeo completo
-    # concepto_novedades debe existir y tener concepto_libro asignado
+    # Obtener registros de novedades CON mapeo completo
+    # Solo los que tienen: concepto_novedades → concepto_libro
     novedades_mapeadas = RegistroNovedades.objects.filter(
         cierre=cierre,
         concepto_novedades__isnull=False,
@@ -226,12 +222,11 @@ def _comparar_libro_novedades(cierre, cierre_id):
     
     total_novedades = novedades_mapeadas.count()
     
-    # Agrupar novedades por (rut, concepto_libro_id)
-    novedades_por_empleado_concepto = {}
-    for idx, novedad in enumerate(novedades_mapeadas):
-        # Actualizar progreso cada 100 registros
-        if idx % 100 == 0 and total_novedades > 0:
-            progreso = 10 + int((idx / total_novedades) * 20)  # 10-30%
+    # Agrupar novedades por (rut, concepto_libro_id) - sumar si hay múltiples
+    novedades_dict = {}
+    for idx, nov in enumerate(novedades_mapeadas):
+        if idx % 500 == 0 and total_novedades > 0:
+            progreso = 10 + int((idx / total_novedades) * 20)
             _set_progreso(cierre_id, {
                 'estado': 'comparando',
                 'progreso': progreso,
@@ -239,153 +234,104 @@ def _comparar_libro_novedades(cierre, cierre_id):
                 'mensaje': f'Procesando novedades: {idx}/{total_novedades}',
             })
         
-        # La clave es (rut, concepto_libro_id) para poder comparar con RegistroConcepto
-        concepto_libro = novedad.concepto_novedades.concepto_libro
-        key = (novedad.rut_empleado, concepto_libro.id)
-        if key not in novedades_por_empleado_concepto:
-            novedades_por_empleado_concepto[key] = {
-                'monto': Decimal('0'),
-                'nombre_empleado': novedad.nombre_empleado,
-                'concepto': concepto_libro,
-            }
-        novedades_por_empleado_concepto[key]['monto'] += Decimal(str(novedad.monto))
-    
-    # Obtener registros del libro (desde RegistroLibro - capa Bronce)
-    # RegistroLibro.concepto -> ConceptoLibro (mismo que ConceptoNovedades.concepto_libro)
-    from apps.validador.models import RegistroLibro
-    
-    registros_libro = RegistroLibro.objects.filter(
-        cierre=cierre
-    ).select_related('empleado', 'concepto')
-    
-    # Crear diccionario de libro por (rut, concepto_libro_id)
-    libro_por_empleado_concepto = {}
-    for registro in registros_libro:
-        # La categoría está en concepto.categoria (string)
-        # Solo comparamos categorías de montos (no info_adicional ni ignorar)
-        categoria = registro.concepto.categoria
-        if categoria in ('info_adicional', 'ignorar'):
-            continue
+        concepto_libro = nov.concepto_novedades.concepto_libro
+        key = (nov.rut_empleado, concepto_libro.id)
         
-        key = (registro.empleado.rut, registro.concepto_id)
-        libro_por_empleado_concepto[key] = {
-            'monto': Decimal(str(registro.monto)),
-            'nombre_empleado': registro.empleado.nombre,
-            'concepto': registro.concepto,
-        }
+        if key not in novedades_dict:
+            novedades_dict[key] = {
+                'monto': Decimal('0'),
+                'nombre_empleado': nov.nombre_empleado,
+                'concepto_nombre_libro': concepto_libro.header_original,
+                'concepto_nombre_novedades': nov.concepto_novedades.header_original,
+            }
+        novedades_dict[key]['monto'] += Decimal(str(nov.monto))
     
     _set_progreso(cierre_id, {
         'estado': 'comparando',
         'progreso': 35,
         'fase': 'libro_vs_novedades',
+        'mensaje': 'Cargando datos del libro...',
+    })
+    
+    # Obtener registros del libro
+    registros_libro = RegistroLibro.objects.filter(
+        cierre=cierre
+    ).select_related('empleado', 'concepto')
+    
+    # Crear diccionario del libro por (rut, concepto_libro_id)
+    # Solo categorías comparables (no info_adicional ni ignorar)
+    libro_dict = {}
+    for reg in registros_libro:
+        if reg.concepto.categoria in ('info_adicional', 'ignorar'):
+            continue
+        
+        key = (reg.empleado.rut, reg.concepto_id)
+        libro_dict[key] = {
+            'monto': Decimal(str(reg.monto)),
+            'nombre_empleado': reg.empleado.nombre,
+            'concepto_nombre': reg.concepto.header_original,
+        }
+    
+    _set_progreso(cierre_id, {
+        'estado': 'comparando',
+        'progreso': 45,
+        'fase': 'libro_vs_novedades',
         'mensaje': 'Comparando montos...',
     })
     
-    # Comparar
+    # Comparar solo los elementos que existen en AMBOS lados
     tolerancia = Decimal('1')  # Tolerancia de $1 por redondeos
     discrepancias_batch = []
     
-    # Items en novedades que no coinciden con libro
-    for key, datos_novedad in novedades_por_empleado_concepto.items():
-        rut, concepto_libro_id = key
-        datos_libro = libro_por_empleado_concepto.get(key)
+    # Buscar keys que existen en ambos diccionarios
+    keys_comunes = set(novedades_dict.keys()) & set(libro_dict.keys())
+    
+    for key in keys_comunes:
+        rut, concepto_id = key
+        datos_nov = novedades_dict[key]
+        datos_libro = libro_dict[key]
         
-        if not datos_libro:
-            # El item está en novedades pero no en libro
-            concepto = datos_novedad['concepto']
-            discrepancias_batch.append(Discrepancia(
-                cierre=cierre,
-                tipo='falta_en_erp',
-                origen='libro_vs_novedades',
-                rut_empleado=rut,
-                nombre_empleado=datos_novedad['nombre_empleado'],
-                # concepto FK es a ConceptoCliente, no ConceptoLibro, así que dejamos null
-                concepto=None,
-                nombre_item=concepto.header_original,
-                monto_cliente=datos_novedad['monto'],
-                descripcion=f"El item '{concepto.header_original}' está en Novedades pero no en el Libro"
-            ))
-            discrepancias_creadas += 1
-            continue
+        diferencia = datos_libro['monto'] - datos_nov['monto']
         
-        # Comparar montos
-        diferencia = datos_libro['monto'] - datos_novedad['monto']
         if abs(diferencia) > tolerancia:
-            concepto = datos_libro['concepto']
             discrepancia = Discrepancia(
                 cierre=cierre,
                 tipo='monto_diferente',
                 origen='libro_vs_novedades',
                 rut_empleado=rut,
-                nombre_empleado=datos_libro['nombre_empleado'],
-                concepto=None,  # FK es a ConceptoCliente
-                nombre_item=concepto.header_original,
+                nombre_empleado=datos_libro['nombre_empleado'] or datos_nov['nombre_empleado'],
+                nombre_item=datos_libro['concepto_nombre'],
+                nombre_item_novedades=datos_nov['concepto_nombre_novedades'],
                 monto_erp=datos_libro['monto'],
-                monto_cliente=datos_novedad['monto'],
+                monto_cliente=datos_nov['monto'],
                 diferencia=diferencia,
             )
             discrepancia.generar_descripcion()
             discrepancias_batch.append(discrepancia)
             discrepancias_creadas += 1
     
-    _set_progreso(cierre_id, {
-        'estado': 'comparando',
-        'progreso': 45,
-        'fase': 'libro_vs_novedades',
-        'mensaje': 'Verificando items faltantes...',
-    })
-    
-    # Items en libro que no están en novedades (que deberían estar)
-    for key, datos_libro in libro_por_empleado_concepto.items():
-        if key not in novedades_por_empleado_concepto:
-            rut, concepto_libro_id = key
-            concepto = datos_libro['concepto']
-            
-            discrepancias_batch.append(Discrepancia(
-                cierre=cierre,
-                tipo='falta_en_cliente',
-                origen='libro_vs_novedades',
-                rut_empleado=rut,
-                nombre_empleado=datos_libro['nombre_empleado'],
-                concepto=None,  # FK es a ConceptoCliente
-                nombre_item=concepto.header_original,
-                monto_erp=datos_libro['monto'],
-                descripcion=f"El item '{concepto.header_original}' está en el Libro pero no en Novedades"
-            ))
-            discrepancias_creadas += 1
-    
-    # Items sin mapear (generar discrepancia informativa)
-    # Buscar registros de novedades sin concepto_novedades o donde concepto_novedades no tiene concepto_libro
-    items_sin_mapear = RegistroNovedades.objects.filter(
-        cierre=cierre
-    ).filter(
-        models.Q(concepto_novedades__isnull=True) | 
-        models.Q(concepto_novedades__concepto_libro__isnull=True)
-    ).exclude(
-        concepto_novedades__sin_asignacion=True  # Excluir los marcados como "sin asignación"
-    ).values('nombre_item').distinct()
-    
-    for item in items_sin_mapear:
-        discrepancias_batch.append(Discrepancia(
-            cierre=cierre,
-            tipo='item_no_mapeado',
-            origen='libro_vs_novedades',
-            rut_empleado='N/A',
-            nombre_item=item['nombre_item'],
-            descripcion=f"El item '{item['nombre_item']}' de Novedades no tiene mapeo a ningún concepto del ERP"
-        ))
-        discrepancias_creadas += 1
-    
-    # Bulk create para mejor performance
+    # Bulk create
     if discrepancias_batch:
         Discrepancia.objects.bulk_create(discrepancias_batch)
     
-    return {'discrepancias': discrepancias_creadas}
+    logger.info(
+        f"Comparación libro vs novedades cierre {cierre.id}: "
+        f"{len(keys_comunes)} pares comparados, {discrepancias_creadas} discrepancias"
+    )
+    
+    return {'discrepancias': discrepancias_creadas, 'pares_comparados': len(keys_comunes)}
 
 
 def _comparar_movimientos(cierre, cierre_id):
     """
     Compara los movimientos del ERP con los del Analista.
+    
+    Conexiones:
+    - ERP alta (Altas y Bajas) ↔ Analista alta (ingresos)
+    - ERP baja (Altas y Bajas) ↔ Analista baja (finiquitos)
+    - ERP licencia/permiso/ausencia/vacaciones (Ausentismos/Vacaciones) ↔ Analista (asistencias)
+    
+    Compara por RUT + tipo de movimiento.
     
     Detecta:
     - falta_en_cliente: Movimiento en ERP pero no en archivos Analista
@@ -393,9 +339,9 @@ def _comparar_movimientos(cierre, cierre_id):
     """
     from apps.validador.models import (
         MovimientoMes,
+        MovimientoAnalista,
         Discrepancia,
     )
-    from apps.validador.models.archivo import ArchivoAnalista
     
     # Limpiar discrepancias anteriores
     Discrepancia.objects.filter(
@@ -406,39 +352,66 @@ def _comparar_movimientos(cierre, cierre_id):
     discrepancias_creadas = 0
     discrepancias_batch = []
     
+    _set_progreso(cierre_id, {
+        'estado': 'comparando',
+        'progreso': 65,
+        'fase': 'movimientos',
+        'mensaje': 'Cargando movimientos ERP...',
+    })
+    
+    # Obtener rango de fechas del mes del cierre
+    año, mes = map(int, cierre.periodo.split('-'))
+    from calendar import monthrange
+    primer_dia = date(año, mes, 1)
+    ultimo_dia = date(año, mes, monthrange(año, mes)[1])
+    
     # Obtener movimientos del ERP
     movimientos_erp = MovimientoMes.objects.filter(cierre=cierre)
     
+    # Crear dict de ERP: {(rut, tipo): movimiento}
+    # Solo incluir movimientos cuya fecha_inicio esté en el mes del cierre
+    # (para vacaciones/asistencia que pueden cruzar meses)
+    erp_dict = {}
+    movimientos_ignorados = 0
+    for mov in movimientos_erp:
+        # Para vacaciones y asistencia, filtrar por fecha_inicio en el mes
+        if mov.tipo in ('vacaciones', 'asistencia') and mov.fecha_inicio:
+            if mov.fecha_inicio < primer_dia or mov.fecha_inicio > ultimo_dia:
+                movimientos_ignorados += 1
+                continue
+        
+        key = (mov.rut, mov.tipo)
+        # Si hay múltiples del mismo tipo para el mismo RUT, guardar el primero
+        if key not in erp_dict:
+            erp_dict[key] = mov
+    
+    if movimientos_ignorados:
+        logger.info(
+            f"Cierre {cierre.id}: Ignorados {movimientos_ignorados} movimientos ERP "
+            f"con fecha_inicio fuera del mes {cierre.periodo}"
+        )
+    
     _set_progreso(cierre_id, {
         'estado': 'comparando',
-        'progreso': 70,
+        'progreso': 72,
         'fase': 'movimientos',
-        'mensaje': f'Procesando {movimientos_erp.count()} movimientos ERP...',
+        'mensaje': 'Cargando movimientos Analista...',
     })
     
-    # Obtener archivos analista procesados (ingresos, finiquitos, asistencias)
-    # Cada archivo tiene registros de movimientos que debemos comparar
-    archivos_analista = ArchivoAnalista.objects.filter(
-        cierre=cierre,
-        estado='procesado'
-    ).exclude(tipo='novedades')  # Novedades se compara aparte
+    # Obtener movimientos del Analista
+    movimientos_analista = MovimientoAnalista.objects.filter(cierre=cierre)
     
-    # Crear set de movimientos del analista: (rut, tipo_movimiento)
-    analista_set = set()
-    analista_data = {}  # Para guardar datos del movimiento
+    # Si no hay movimientos del analista, no hay nada que comparar
+    if not movimientos_analista.exists():
+        logger.info(f"Cierre {cierre.id}: Sin movimientos del analista para comparar")
+        return {'discrepancias': 0, 'mensaje': 'Sin archivos de movimientos del analista'}
     
-    for archivo in archivos_analista:
-        # Mapear tipo de archivo a tipo de movimiento
-        tipo_map = {
-            'ingresos': 'alta',
-            'finiquitos': 'baja',
-            'asistencias': 'ausencia',  # Simplificado
-        }
-        tipo_mov = tipo_map.get(archivo.tipo, archivo.tipo)
-        
-        # Los datos procesados están en los movimientos del analista
-        # Por ahora usamos los registros que ya existen
-        # TODO: Implementar MovimientoAnalista si no existe
+    # Crear dict de Analista: {(rut, tipo): movimiento}
+    analista_dict = {}
+    for mov in movimientos_analista:
+        key = (mov.rut, mov.tipo)
+        if key not in analista_dict:
+            analista_dict[key] = mov
     
     _set_progreso(cierre_id, {
         'estado': 'comparando',
@@ -447,44 +420,58 @@ def _comparar_movimientos(cierre, cierre_id):
         'mensaje': 'Comparando movimientos...',
     })
     
-    # Crear sets de (rut, tipo) para comparación rápida desde ERP
-    erp_set = {(m.rut, m.tipo) for m in movimientos_erp}
-    erp_data = {(m.rut, m.tipo): m for m in movimientos_erp}
+    erp_keys = set(erp_dict.keys())
+    analista_keys = set(analista_dict.keys())
     
-    # Por ahora, solo reportamos movimientos del ERP que podrían no tener respaldo
-    # La comparación completa requiere que el analista suba archivos de ingresos/finiquitos
+    # Movimientos en ERP que NO están en Analista
+    solo_en_erp = erp_keys - analista_keys
+    for key in solo_en_erp:
+        rut, tipo = key
+        mov = erp_dict[key]
+        
+        discrepancias_batch.append(Discrepancia(
+            cierre=cierre,
+            tipo='falta_en_cliente',
+            origen='movimientos_vs_analista',
+            rut_empleado=rut,
+            nombre_empleado=mov.nombre,
+            tipo_movimiento=tipo,
+            descripcion=(
+                f"El movimiento '{mov.get_tipo_display()}' para {rut} ({mov.nombre}) "
+                f"está en ERP pero no fue reportado por el cliente"
+            ),
+            detalle_movimiento={
+                'fecha_inicio': str(mov.fecha_inicio) if mov.fecha_inicio else None,
+                'fecha_fin': str(mov.fecha_fin) if mov.fecha_fin else None,
+                'dias': mov.dias,
+                'hoja_origen': mov.hoja_origen,
+            }
+        ))
+        discrepancias_creadas += 1
     
-    # Si no hay archivos de analista procesados (excepto novedades), 
-    # no generamos discrepancias de movimientos
-    if not archivos_analista.exists():
-        logger.info(f"Cierre {cierre.id}: Sin archivos de movimientos del analista para comparar")
-        return {'discrepancias': 0}
-    
-    # Movimientos en ERP pero no en Analista
-    for (rut, tipo), mov in erp_data.items():
-        if (rut, tipo) not in analista_set:
-            discrepancias_batch.append(Discrepancia(
-                cierre=cierre,
-                tipo='falta_en_cliente',
-                origen='movimientos_vs_analista',
-                rut_empleado=rut,
-                nombre_empleado=mov.nombre if mov else '',
-                tipo_movimiento=tipo,
-                descripcion=f"El movimiento '{tipo}' para empleado está en ERP pero no fue reportado por el Analista"
-            ))
-            discrepancias_creadas += 1
-    
-    # Movimientos en Analista pero no en ERP
-    for (rut, tipo) in analista_set - erp_set:
-        data = analista_data.get((rut, tipo), {})
+    # Movimientos en Analista que NO están en ERP
+    solo_en_analista = analista_keys - erp_keys
+    for key in solo_en_analista:
+        rut, tipo = key
+        mov = analista_dict[key]
+        
         discrepancias_batch.append(Discrepancia(
             cierre=cierre,
             tipo='falta_en_erp',
             origen='movimientos_vs_analista',
             rut_empleado=rut,
-            nombre_empleado=data.get('nombre', ''),
+            nombre_empleado=mov.nombre,
             tipo_movimiento=tipo,
-            descripcion=f"El movimiento '{tipo}' fue reportado por el Analista pero no está en ERP"
+            descripcion=(
+                f"El movimiento '{mov.get_tipo_display()}' para {rut} ({mov.nombre}) "
+                f"fue reportado por el cliente pero no está en ERP"
+            ),
+            detalle_movimiento={
+                'fecha_inicio': str(mov.fecha_inicio) if mov.fecha_inicio else None,
+                'fecha_fin': str(mov.fecha_fin) if mov.fecha_fin else None,
+                'dias': mov.dias,
+                'origen': mov.origen,
+            }
         ))
         discrepancias_creadas += 1
     
@@ -492,4 +479,14 @@ def _comparar_movimientos(cierre, cierre_id):
     if discrepancias_batch:
         Discrepancia.objects.bulk_create(discrepancias_batch)
     
-    return {'discrepancias': discrepancias_creadas}
+    logger.info(
+        f"Comparación movimientos cierre {cierre.id}: "
+        f"ERP={len(erp_keys)}, Analista={len(analista_keys)}, "
+        f"solo_erp={len(solo_en_erp)}, solo_analista={len(solo_en_analista)}"
+    )
+    
+    return {
+        'discrepancias': discrepancias_creadas,
+        'movimientos_erp': len(erp_keys),
+        'movimientos_analista': len(analista_keys),
+    }
